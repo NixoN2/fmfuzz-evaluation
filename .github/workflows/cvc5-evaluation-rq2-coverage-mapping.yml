@@ -193,6 +193,31 @@ jobs:
             fi
           done
           echo ""
+          echo "Checking source file locations..."
+          echo "Looking for source files that gcov needs..."
+          # Try running gcov manually on one file to see what it expects
+          SAMPLE_GCDA=$(find . -name "*.gcda" -type f | head -1)
+          if [ -n "$SAMPLE_GCDA" ]; then
+            echo "Testing gcov on: $SAMPLE_GCDA"
+            gcov "$SAMPLE_GCDA" 2>&1 | head -20 || echo "gcov failed"
+            echo ""
+            echo "Checking if source files exist..."
+            # Check if src/ directory exists relative to build
+            if [ -d "../src" ]; then
+              echo "✓ Found ../src directory"
+              find ../src -name "*.cpp" -o -name "*.c" | head -5
+            else
+              echo "✗ ../src directory not found"
+            fi
+            # Check if source files exist in build/src (from headers extraction)
+            if [ -d "./src" ]; then
+              echo "✓ Found ./src directory (from headers)"
+              find ./src -name "*.cpp" -o -name "*.c" | head -5
+            else
+              echo "✗ ./src directory not found"
+            fi
+          fi
+          echo ""
           echo "Testing fastcov..."
           fastcov --gcov gcov --search-directory . --output test_fastcov.json --exclude "/usr/include/*" --exclude "*/deps/*" --jobs 4 2>&1 | head -50 || echo "fastcov failed with exit code: $?"
           echo ""

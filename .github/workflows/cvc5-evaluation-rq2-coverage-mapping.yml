@@ -133,6 +133,13 @@ jobs:
             rm -rf cvc5-source
           fi
       
+      - name: Configure CMake in build directory (for CTest discovery)
+        run: |
+          cd cvc5/build
+          # Configure CMake pointing to parent source directory
+          # This creates CTestTestfile.cmake and CMakeCache.txt needed for ctest --show-only
+          cmake -DENABLE_TESTING=ON -DBUILD_TESTING=ON ..
+      
       - name: Install system dependencies for coverage
         run: |
           sudo apt-get update

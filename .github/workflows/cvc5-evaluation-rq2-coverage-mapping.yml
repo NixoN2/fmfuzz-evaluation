@@ -110,11 +110,6 @@ jobs:
           aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY artifacts/artifacts.tar.gz
           echo "✅ Downloaded coverage binary for $COMMIT_HASH"
       
-      - name: Extract coverage binary
-        run: |
-          mkdir -p cvc5/build
-          ./scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
-      
       - name: Checkout exact CVC5 commit (for source files and CTest discovery)
         uses: actions/checkout@v5
         with:
@@ -122,6 +117,11 @@ jobs:
           ref: ${{ matrix.commit }}
           path: cvc5
           fetch-depth: 0
+      
+      - name: Extract coverage binary (preserving source files)
+        run: |
+          mkdir -p cvc5/build
+          ./scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
       
       - name: Configure CMake in build directory (for CTest discovery)
         run: |

@@ -281,12 +281,13 @@ def analyze_commit_functions(commit_hash: str, repo_path: str, solver: str) -> D
         try:
             matches = query.matches(tree.root_node)
             # Convert matches to captures format: [(node, capture_name), ...]
+            # matches() returns Match objects, each with a captures property
             captures = []
             for match in matches:
-                for capture_name, node in match.items():
-                    captures.append((node, capture_name))
+                # match.captures returns list of (node, capture_name) tuples
+                captures.extend(match.captures)
         except AttributeError:
-            # Fallback to captures() if matches() not available
+            # Fallback to captures() if matches() not available (older API)
             captures = query.captures(tree.root_node)
         func_map = {}
         

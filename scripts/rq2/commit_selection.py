@@ -167,20 +167,31 @@ def filter_cpp_commits(commits: List[Dict], repo_url: str, token: Optional[str] 
 
 
 def init_tree_sitter():
+    """Initialize tree-sitter parser for C++.
+    
+    Tries multiple approaches:
+    1. tree-sitter-cpp directly (most reliable)
+    2. tree-sitter-languages (if available)
+    """
     try:
-        from tree_sitter_languages import get_language, get_parser
-        language = get_language('cpp')
-        parser = get_parser('cpp')
+        # Approach 1: Use tree-sitter-cpp directly
+        from tree_sitter import Language, Parser
+        import tree_sitter_cpp as cpp
+        
+        # Create Language object from the language definition
+        language = Language(cpp.language())
+        # Create Parser with the language
+        parser = Parser(language)
         return language, parser
-    except ImportError:
+    except (ImportError, AttributeError, TypeError) as e:
         try:
-            from tree_sitter import Language, Parser
-            import tree_sitter_cpp as cpp
-            language = Language(cpp.language())
-            parser = Parser(language)
+            # Approach 2: Try tree-sitter-languages (may have API issues)
+            from tree_sitter_languages import get_language, get_parser
+            language = get_language('cpp')
+            parser = get_parser('cpp')
             return language, parser
-        except ImportError:
-            raise RuntimeError("Install: pip install tree-sitter-languages or (tree-sitter and tree-sitter-cpp)")
+        except (ImportError, TypeError, AttributeError):
+            raise RuntimeError(f"Failed to initialize tree-sitter. Install: pip install tree-sitter tree-sitter-cpp. Error: {e}")
 
 
 def parse_diff(diff_text: str) -> Dict[str, set]:

@@ -39,6 +39,21 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       
+      - name: Checkout CVC5 repository
+        run: |
+          if [ -d "cvc5" ]; then
+            cd cvc5
+            git fetch origin
+          else
+            git clone https://github.com/cvc5/cvc5.git cvc5
+            cd cvc5
+          fi
+      
+      - name: Configure CMake (for ctest discovery)
+        run: |
+          cd cvc5
+          ./configure.sh production --auto-download
+      
       - name: Generate combined matrix
         id: generate-matrix
         env:

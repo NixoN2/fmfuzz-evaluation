@@ -39,6 +39,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       
+      
       - name: Generate combined matrix
         id: generate-matrix
         env:

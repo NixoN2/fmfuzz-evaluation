@@ -133,11 +133,6 @@ jobs:
             rm -rf cvc5-source
           fi
       
-      - name: Configure CMake (for ctest discovery)
-        run: |
-          cd cvc5
-          ./configure.sh production --auto-download
-      
       - name: Install system dependencies for coverage
         run: |
           sudo apt-get update
@@ -154,6 +149,8 @@ jobs:
       
       - name: Run coverage analysis
         working-directory: cvc5/build
+        env:
+          TEST_TIMEOUT: 120
         run: |
           python3 ../../fmfuzz-dev/scripts/cvc5/coverage/coverage_mapper.py \
             --build-dir . \

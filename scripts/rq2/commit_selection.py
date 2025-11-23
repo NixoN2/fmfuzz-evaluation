@@ -213,22 +213,35 @@ def parse_diff(diff_text: str) -> Dict[str, set]:
 
 
 FUNCTION_QUERY = """
-(
-  [
-    (function_definition)
-    (declaration)
-    (field_declaration)
-  ] @func.node
-  .
-  (function_declarator
+(function_definition
+  declarator: (function_declarator
     declarator: [
-      (identifier)
-      (field_identifier)
-      (qualified_identifier)
-      (operator_name)
-      (destructor_name)
-    ] @func.name)
-)
+      (identifier) @func.name
+      (field_identifier) @func.name
+      (qualified_identifier) @func.name
+      (operator_name) @func.name
+      (destructor_name) @func.name
+    ])) @func.node
+
+(declaration
+  declarator: (function_declarator
+    declarator: [
+      (identifier) @func.name
+      (field_identifier) @func.name
+      (qualified_identifier) @func.name
+      (operator_name) @func.name
+      (destructor_name) @func.name
+    ])) @func.node
+
+(field_declaration
+  declarator: (function_declarator
+    declarator: [
+      (identifier) @func.name
+      (field_identifier) @func.name
+      (qualified_identifier) @func.name
+      (operator_name) @func.name
+      (destructor_name) @func.name
+    ])) @func.node
 """
 
 

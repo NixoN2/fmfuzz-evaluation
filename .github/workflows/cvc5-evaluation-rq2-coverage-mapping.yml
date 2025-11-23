@@ -52,7 +52,7 @@ jobs:
       - name: Configure CMake (for ctest discovery)
         run: |
           cd cvc5
-          ./configure.sh production --auto-download
+          ./configure.sh debug --auto-download
       
       - name: Generate combined matrix
         id: generate-matrix
@@ -113,7 +113,7 @@ jobs:
       - name: Extract coverage binary
         run: |
           mkdir -p cvc5/build
-          ./fmfuzz-dev/scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
+          ./scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
       
       - name: Checkout exact CVC5 commit (deep clone for CTest discovery)
         uses: actions/checkout@v5

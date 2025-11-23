@@ -115,6 +115,24 @@ jobs:
           mkdir -p cvc5/build
           ./fmfuzz-dev/scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
       
+      - name: Checkout CVC5 repository for CMake configuration
+        run: |
+          COMMIT_HASH="${{ matrix.commit }}"
+          if [ -d "cvc5" ]; then
+            cd cvc5
+            git fetch origin
+            git checkout $COMMIT_HASH
+          else
+            git clone https://github.com/cvc5/cvc5.git cvc5
+            cd cvc5
+            git checkout $COMMIT_HASH
+          fi
+      
+      - name: Configure CMake (for ctest discovery)
+        run: |
+          cd cvc5
+          ./configure.sh production --auto-download
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

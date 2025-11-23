@@ -121,12 +121,12 @@ jobs:
           if [ -d "cvc5" ]; then
             cd cvc5
             git fetch origin
-            git checkout $COMMIT_HASH
           else
             git clone https://github.com/cvc5/cvc5.git cvc5
             cd cvc5
-            git checkout $COMMIT_HASH
           fi
+          git fetch origin $COMMIT_HASH || git fetch origin
+          git checkout $COMMIT_HASH
       
       - name: Configure CMake (for ctest discovery)
         run: |

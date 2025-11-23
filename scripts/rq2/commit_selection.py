@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """RQ2 Commit Selection: Discover commits, analyze changed functions, select commits
 
-Changes from fmfuzz-dev version:
-- Updated thresholds: small (<10), medium (10-50), large (50+)
-- Default to small counts for testing (1-2 commits)
-- Option to read commits from S3 bugs folder (commits that were fuzzed)
-  - Always uses S3, no local folder option
+Reads commits from S3 bugs folder, analyzes changed C++ functions, and selects commits
+based on function count thresholds (small <10, medium 10-50, large 50+).
 """
 
 import os
@@ -117,39 +114,6 @@ def get_commits_from_s3_bugs(bucket: str, solver: str, region: Optional[str] = N
         return []
 
 
-def get_commits_from_last_n_years(repo_url: str, years: int = 2, token: Optional[str] = None) -> List[Dict]:
-    repo_path = repo_url.replace('https://github.com/', '').replace('.git', '')
-    api_url = f"https://api.github.com/repos/{repo_path}/commits"
-    headers = {'Authorization': f'token {token}'} if token else {}
-    cutoff_date = datetime.now(timezone.utc) - timedelta(days=years * 365)
-    
-    commits = []
-    page = 1
-    params = {'per_page': 100, 'since': cutoff_date.isoformat(), 'page': page}
-    
-    while True:
-        response = requests.get(api_url, headers=headers, params=params)
-        response.raise_for_status()
-        data = response.json()
-        if not data:
-            break
-        
-        for commit in data:
-            commit_date = datetime.fromisoformat(commit['commit']['author']['date'].replace('Z', '+00:00'))
-            if commit_date < cutoff_date and page > 1:
-                return commits
-            commits.append({
-                'hash': commit['sha'],
-                'date': commit_date.isoformat(),
-                'message': commit['commit']['message'].split('\n')[0]
-            })
-        
-        if len(data) < 100:
-            break
-        page += 1
-        params['page'] = page
-    
-    return commits
 
 
 def filter_cpp_commits(commits: List[Dict], repo_url: str, token: Optional[str] = None) -> List[Dict]:
@@ -301,34 +265,10 @@ def analyze_commit_functions(commit_hash: str, repo_path: str, solver: str) -> D
             # If iterator or other, convert to list
             captures = list(captures_raw) if captures_raw else []
         
-        # Debug: print what we got from captures
         if not captures:
             print(f"  ⚠️  No captures found in {file_path}")
-            print(f"      Tree root type: {tree.root_node.type}, children: {len(tree.root_node.children)}")
-            # Try to see if parsing worked and what node types exist
-            if tree.root_node.children:
-                print(f"      First child type: {tree.root_node.children[0].type}")
-                # Check if there are any function_definition nodes in the tree
-                def find_node_types(node, types_set, max_depth=3, current_depth=0):
-                    if current_depth >= max_depth:
-                        return
-                    types_set.add(node.type)
-                    for child in node.children:
-                        find_node_types(child, types_set, max_depth, current_depth + 1)
-                
-                node_types = set()
-                find_node_types(tree.root_node, node_types, max_depth=2)
-                function_related = [t for t in node_types if 'function' in t.lower() or 'declaration' in t.lower() or 'definition' in t.lower()]
-                if function_related:
-                    print(f"      Found function-related node types: {function_related[:5]}")
-                else:
-                    print(f"      Sample node types: {list(node_types)[:10]}")
         else:
             print(f"  📋 Found {len(captures)} captures in {file_path}")
-            if captures:
-                # captures is list of (node, capture_name) tuples
-                node, capture_name = captures[0]
-                print(f"      First capture: tag={capture_name}, node_type={node.type}")
         
         func_map = {}
         
@@ -354,7 +294,6 @@ def analyze_commit_functions(commit_hash: str, repo_path: str, solver: str) -> D
         
         if not found_functions:
             files_with_no_functions.append(file_path)
-            print(f"    ⚠️  No changed functions found in {file_path} (changed lines: {sorted(changed_lines)[:10]}{'...' if len(changed_lines) > 10 else ''})")
     
     return {
         'changed_functions_count': len(function_details),
@@ -396,10 +335,9 @@ def select_commits(categorized: Dict, small_count: int, medium_count: int, large
 def main():
     parser = argparse.ArgumentParser(description='RQ2 Commit Selection')
     parser.add_argument('solver', choices=['z3', 'cvc5'])
-    parser.add_argument('repo_url')
-    parser.add_argument('--years', type=int, default=2)
-    parser.add_argument('--token', default=os.getenv('GITHUB_TOKEN'))
-    parser.add_argument('--repo-path', default='.')
+    parser.add_argument('repo_url', help='Repository URL (for C++ change detection)')
+    parser.add_argument('--token', default=os.getenv('GITHUB_TOKEN'), help='GitHub token for API access')
+    parser.add_argument('--repo-path', default='.', help='Path to cloned repository')
     parser.add_argument('--small-count', type=int, default=1, help='Number of small commits (default: 1 for testing)')
     parser.add_argument('--medium-count', type=int, default=1, help='Number of medium commits (default: 1 for testing)')
     parser.add_argument('--large-count', type=int, default=0, help='Number of large commits (default: 0 for testing)')
@@ -416,46 +354,40 @@ def main():
     
     s3 = EvaluationS3Manager(bucket, args.solver)
     
-    # Read commits from S3 bugs folder (default)
+    # Read commits from S3 bugs folder
     print(f"🔍 Reading commits from S3 bugs folder: solvers/{args.solver}/bugs/")
     all_commits = get_commits_from_s3_bugs(bucket, args.solver, os.getenv('AWS_REGION', 'eu-north-1'))
     
-    if all_commits:
-        print(f"✅ Found {len(all_commits)} commits from S3 bugs folder")
-        # Deduplicate: remove commits where short hash matches prefix of another commit's hash
-        seen_short = {}
-        deduplicated = []
-        for commit in all_commits:
-            commit_hash = commit['hash']
-            short_hash = commit_hash[:7] if len(commit_hash) >= 7 else commit_hash
+    if not all_commits:
+        print("❌ No commits found in S3 bugs folder")
+        sys.exit(1)
+    
+    print(f"✅ Found {len(all_commits)} commits from S3 bugs folder")
+    
+    # Deduplicate: prefer full hashes over short hashes
+    seen_short = {}
+    deduplicated = []
+    for commit in all_commits:
+        commit_hash = commit['hash']
+        short_hash = commit_hash[:7] if len(commit_hash) >= 7 else commit_hash
+        
+        if short_hash in seen_short:
+            existing = seen_short[short_hash]
+            existing_hash = existing['hash']
             
-            if short_hash in seen_short:
-                # We've seen this short hash before
-                existing = seen_short[short_hash]
-                existing_hash = existing['hash']
-                
-                # Prefer full hash (40 chars) over short hash
-                if len(commit_hash) == 40 and len(existing_hash) < 40:
-                    # Replace short hash with full hash
-                    deduplicated.remove(existing)
-                    deduplicated.append(commit)
-                    seen_short[short_hash] = commit
-                elif len(existing_hash) == 40 and len(commit_hash) < 40:
-                    # Existing is full hash, skip this short one
-                    continue
-                # Both are same length or both short - keep first one
-            else:
+            # Prefer full hash (40 chars) over short hash
+            if len(commit_hash) == 40 and len(existing_hash) < 40:
+                deduplicated.remove(existing)
                 deduplicated.append(commit)
                 seen_short[short_hash] = commit
-        
-        all_commits = deduplicated
-        print(f"✅ After deduplication: {len(all_commits)} unique commits")
-    else:
-        # Fallback: Discover commits from GitHub API if no bugs found
-        print(f"⚠️  No commits found in S3 bugs folder, falling back to GitHub API...")
-        print(f"🔍 Discovering commits from last {args.years} years...")
-        all_commits = get_commits_from_last_n_years(args.repo_url, args.years, args.token)
-        print(f"✅ Found {len(all_commits)} commits")
+            elif len(existing_hash) == 40 and len(commit_hash) < 40:
+                continue  # Skip short hash if we have full hash
+        else:
+            deduplicated.append(commit)
+            seen_short[short_hash] = commit
+    
+    all_commits = deduplicated
+    print(f"✅ After deduplication: {len(all_commits)} unique commits")
     
     print(f"🔍 Filtering commits with C++ changes...")
     cpp_commits = filter_cpp_commits(all_commits, args.repo_url, args.token)

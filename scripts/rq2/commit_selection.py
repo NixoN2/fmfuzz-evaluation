@@ -169,29 +169,24 @@ def filter_cpp_commits(commits: List[Dict], repo_url: str, token: Optional[str] 
 def init_tree_sitter():
     """Initialize tree-sitter parser for C++.
     
-    Tries multiple approaches:
-    1. tree-sitter-cpp directly (most reliable)
-    2. tree-sitter-languages (if available)
+    Uses tree-sitter-cpp directly with correct API.
     """
     try:
-        # Approach 1: Use tree-sitter-cpp directly
         from tree_sitter import Language, Parser
         import tree_sitter_cpp as cpp
         
-        # Create Language object from the language definition
-        language = Language(cpp.language())
-        # Create Parser with the language
+        # Create Language object - second arg is language name (optional but recommended)
+        try:
+            language = Language(cpp.language(), "cpp")
+        except TypeError:
+            # Fallback if second arg not supported
+            language = Language(cpp.language())
+        
+        # Create Parser and set language
         parser = Parser(language)
         return language, parser
     except (ImportError, AttributeError, TypeError) as e:
-        try:
-            # Approach 2: Try tree-sitter-languages (may have API issues)
-            from tree_sitter_languages import get_language, get_parser
-            language = get_language('cpp')
-            parser = get_parser('cpp')
-            return language, parser
-        except (ImportError, TypeError, AttributeError):
-            raise RuntimeError(f"Failed to initialize tree-sitter. Install: pip install tree-sitter tree-sitter-cpp. Error: {e}")
+        raise RuntimeError(f"Failed to initialize tree-sitter. Install: pip install tree-sitter tree-sitter-cpp. Error: {e}")
 
 
 def parse_diff(diff_text: str) -> Dict[str, set]:
@@ -273,9 +268,11 @@ def analyze_commit_functions(commit_hash: str, repo_path: str, solver: str) -> D
             files_with_no_functions.append(file_path)
             continue
         
-        # Use query.captures() directly - this works with language.query() result
-        # (deprecated API but functional)
-        captures = query.captures(tree.root_node)
+        # Use QueryCursor to execute query (current API)
+        from tree_sitter import QueryCursor
+        cursor = QueryCursor(query)
+        # captures() returns list of (node, capture_name) tuples
+        captures = cursor.captures(tree.root_node)
         
         # Debug: print what we got from captures
         if not captures:
@@ -287,7 +284,9 @@ def analyze_commit_functions(commit_hash: str, repo_path: str, solver: str) -> D
         else:
             print(f"  📋 Found {len(captures)} captures in {file_path}")
             if captures:
-                print(f"      First capture: tag={captures[0][1]}, node_type={captures[0][0].type}")
+                # captures is list of (node, capture_name) tuples
+                node, capture_name = captures[0]
+                print(f"      First capture: tag={capture_name}, node_type={node.type}")
         
         func_map = {}
         

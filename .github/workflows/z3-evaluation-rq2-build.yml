@@ -94,8 +94,9 @@ jobs:
       - name: Compress production artifacts
         run: |
           cd .artifacts-production
-          tar -czf ../z3/build/artifacts-production.tar.gz .
+          tar -czf ../artifacts-production.tar.gz .
           cd ..
+          mv artifacts-production.tar.gz z3/build/
       
       - name: Install LLVM/Clang 17 for coverage build
         uses: KyleMayes/install-llvm-action@v2
@@ -124,8 +125,9 @@ jobs:
       - name: Compress coverage artifacts
         run: |
           cd .artifacts-coverage
-          tar -czf ../z3/build/artifacts-coverage.tar.gz .
+          tar -czf ../artifacts-coverage.tar.gz .
           cd ..
+          mv artifacts-coverage.tar.gz z3/build/
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5.1.0

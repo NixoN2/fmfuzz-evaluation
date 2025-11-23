@@ -120,9 +120,9 @@ jobs:
           COMMIT_HASH="${{ matrix.commit }}"
           if [ -d "cvc5" ]; then
             cd cvc5
-            git fetch origin
+            git fetch origin --all
           else
-            git clone https://github.com/cvc5/cvc5.git cvc5
+            git clone --no-single-branch https://github.com/cvc5/cvc5.git cvc5
             cd cvc5
           fi
           git checkout $COMMIT_HASH

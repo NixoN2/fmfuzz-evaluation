@@ -150,6 +150,45 @@ jobs:
           pip install psutil fastcov
       
       
+      - name: Verify directory structure before coverage analysis
+        run: |
+          echo "Verifying directory structure matches build..."
+          echo "Current directory: $(pwd)"
+          echo ""
+          echo "Checking cvc5 structure:"
+          ls -la cvc5/ | head -10
+          echo ""
+          echo "Checking if source files exist:"
+          if [ -d "cvc5/src" ]; then
+            echo "✓ cvc5/src exists"
+            find cvc5/src -name "*.cpp" | head -3
+          else
+            echo "✗ cvc5/src does NOT exist"
+          fi
+          echo ""
+          echo "Checking if build directory exists:"
+          if [ -d "cvc5/build" ]; then
+            echo "✓ cvc5/build exists"
+            echo "Sample .gcno files:"
+            find cvc5/build -name "*.gcno" | head -3
+          else
+            echo "✗ cvc5/build does NOT exist"
+          fi
+          echo ""
+          echo "Testing gcov path resolution from build directory:"
+          cd cvc5/build
+          SAMPLE_GCNO=$(find . -name "*.gcno" -type f | head -1)
+          if [ -n "$SAMPLE_GCNO" ]; then
+            echo "Sample .gcno: $SAMPLE_GCNO"
+            # Try to see what source path gcov expects
+            SAMPLE_GCDA="${SAMPLE_GCNO%.gcno}.gcda"
+            if [ -f "$SAMPLE_GCDA" ]; then
+              echo "Running gcov to see what it expects:"
+              gcov "$SAMPLE_GCDA" 2>&1 | head -10
+            fi
+          fi
+          cd ../..
+      
       - name: Run coverage analysis
         working-directory: cvc5/build
         env:

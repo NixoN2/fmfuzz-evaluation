@@ -284,8 +284,22 @@ def analyze_commit_functions(commit_hash: str, repo_path: str, solver: str) -> D
         # Use QueryCursor to execute query (current API)
         from tree_sitter import QueryCursor
         cursor = QueryCursor(query)
-        # captures() returns list of (node, capture_name) tuples
-        captures = cursor.captures(tree.root_node)
+        # captures() might return dict or list - handle both
+        captures_raw = cursor.captures(tree.root_node)
+        
+        # Convert to list of (node, capture_name) tuples
+        if isinstance(captures_raw, dict):
+            # If dict: {capture_name: [nodes]}
+            captures = []
+            for capture_name, nodes in captures_raw.items():
+                for node in nodes:
+                    captures.append((node, capture_name))
+        elif isinstance(captures_raw, list):
+            # If list: [(node, capture_name), ...]
+            captures = captures_raw
+        else:
+            # If iterator or other, convert to list
+            captures = list(captures_raw) if captures_raw else []
         
         # Debug: print what we got from captures
         if not captures:

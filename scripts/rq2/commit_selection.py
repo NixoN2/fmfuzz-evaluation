@@ -4,7 +4,8 @@
 Changes from fmfuzz-dev version:
 - Updated thresholds: small (<10), medium (10-50), large (50+)
 - Default to small counts for testing (1-2 commits)
-- Option to read commits from bugs folder (commits that were fuzzed)
+- Option to read commits from S3 bugs folder (commits that were fuzzed)
+  - Always uses S3, no local folder option
 """
 
 import os
@@ -316,7 +317,7 @@ def main():
     parser.add_argument('--max-commits', type=int, help='Maximum total commits to select (for testing, limits selection)')
     parser.add_argument('--skip-analysis', action='store_true')
     parser.add_argument('--skip-selection', action='store_true')
-    parser.add_argument('--use-s3-bugs', action='store_true', help='Extract commits from S3 bugs folder instead of GitHub API')
+    parser.add_argument('--use-s3-bugs', action='store_true', help='Extract commits from S3 bugs folder instead of GitHub API (default: use GitHub API)')
     args = parser.parse_args()
     
     bucket = os.getenv('AWS_S3_BUCKET')

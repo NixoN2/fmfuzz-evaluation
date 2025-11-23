@@ -159,18 +159,27 @@ jobs:
         run: |
           pip install psutil fastcov
       
-      - name: Debug - Run test same way as coverage_mapper
+      - name: Debug - Test coverage extraction
         working-directory: cvc5/build
         env:
           TEST_TIMEOUT: 120
         run: |
-          echo "Testing ctest command used by coverage_mapper..."
+          echo "Running a test and checking coverage..."
           ctest -I 1,1 -j4 --output-on-failure 2>&1
           echo "Exit code: $?"
           echo ""
-          echo "Testing without -j4 flag..."
-          ctest -I 1,1 --output-on-failure 2>&1
-          echo "Exit code: $?"
+          echo "Checking for .gcda files..."
+          find . -name "*.gcda" -type f | head -10 || echo "No .gcda files found"
+          echo ""
+          echo "Testing fastcov..."
+          fastcov --gcov gcov --search-directory . --output test_fastcov.json --exclude "/usr/include/*" --exclude "*/deps/*" --jobs 4 2>&1 | head -50 || echo "fastcov failed with exit code: $?"
+          echo ""
+          if [ -f "test_fastcov.json" ]; then
+            echo "fastcov output file exists, size: $(wc -l < test_fastcov.json) lines"
+            head -20 test_fastcov.json || true
+          else
+            echo "fastcov output file NOT found"
+          fi
       
       - name: Run coverage analysis
         working-directory: cvc5/build

@@ -278,9 +278,24 @@ def analyze_commit_functions(commit_hash: str, repo_path: str, solver: str) -> D
         if not captures:
             print(f"  ⚠️  No captures found in {file_path}")
             print(f"      Tree root type: {tree.root_node.type}, children: {len(tree.root_node.children)}")
-            # Try to see if parsing worked
+            # Try to see if parsing worked and what node types exist
             if tree.root_node.children:
                 print(f"      First child type: {tree.root_node.children[0].type}")
+                # Check if there are any function_definition nodes in the tree
+                def find_node_types(node, types_set, max_depth=3, current_depth=0):
+                    if current_depth >= max_depth:
+                        return
+                    types_set.add(node.type)
+                    for child in node.children:
+                        find_node_types(child, types_set, max_depth, current_depth + 1)
+                
+                node_types = set()
+                find_node_types(tree.root_node, node_types, max_depth=2)
+                function_related = [t for t in node_types if 'function' in t.lower() or 'declaration' in t.lower() or 'definition' in t.lower()]
+                if function_related:
+                    print(f"      Found function-related node types: {function_related[:5]}")
+                else:
+                    print(f"      Sample node types: {list(node_types)[:10]}")
         else:
             print(f"  📋 Found {len(captures)} captures in {file_path}")
             if captures:

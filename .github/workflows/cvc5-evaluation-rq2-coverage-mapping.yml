@@ -120,12 +120,13 @@ jobs:
           COMMIT_HASH="${{ matrix.commit }}"
           if [ -d "cvc5" ]; then
             cd cvc5
-            git fetch origin
+            git fetch origin --depth=1
           else
-            git clone https://github.com/cvc5/cvc5.git cvc5
+            git clone --depth=1 https://github.com/cvc5/cvc5.git cvc5
             cd cvc5
           fi
-          git fetch origin $COMMIT_HASH || git fetch origin
+          # Fetch the specific commit by fetching all refs
+          git fetch origin --unshallow || git fetch origin
           git checkout $COMMIT_HASH
       
       - name: Configure CMake (for ctest discovery)

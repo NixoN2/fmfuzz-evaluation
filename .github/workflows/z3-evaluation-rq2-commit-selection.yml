@@ -45,7 +45,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install boto3 GitPython requests tree-sitter-cpp
+          pip install boto3 GitPython requests tree-sitter tree-sitter-cpp
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5.1.0

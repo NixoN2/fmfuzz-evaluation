@@ -168,18 +168,19 @@ def filter_cpp_commits(commits: List[Dict], repo_url: str, token: Optional[str] 
 
 def init_tree_sitter():
     try:
-        import tree_sitter_cpp as cpp
-        parser = Parser()
-        parser.set_language(cpp.language())
-        return cpp.language(), parser
+        from tree_sitter_languages import get_language, get_parser
+        language = get_language('cpp')
+        parser = get_parser('cpp')
+        return language, parser
     except ImportError:
         try:
-            from tree_sitter_languages import get_language, get_parser
-            language = get_language('cpp')
-            parser = get_parser('cpp')
+            from tree_sitter import Language, Parser
+            import tree_sitter_cpp as cpp
+            language = Language(cpp.language())
+            parser = Parser(language)
             return language, parser
-        except (ImportError, TypeError):
-            raise RuntimeError("Install: pip install tree-sitter-languages or tree-sitter-cpp")
+        except ImportError:
+            raise RuntimeError("Install: pip install tree-sitter-languages or (tree-sitter and tree-sitter-cpp)")
 
 
 def parse_diff(diff_text: str) -> Dict[str, set]:

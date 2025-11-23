@@ -115,17 +115,22 @@ jobs:
           mkdir -p cvc5/build
           ./fmfuzz-dev/scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
       
-      - name: Checkout CVC5 repository for CMake configuration
+      - name: Checkout exact CVC5 commit (deep clone for CTest discovery)
+        uses: actions/checkout@v5
+        with:
+          repository: cvc5/cvc5
+          ref: ${{ matrix.commit }}
+          path: cvc5-source
+          fetch-depth: 0
+      
+      - name: Copy source files to cvc5 directory (preserving build artifacts)
         run: |
-          COMMIT_HASH="${{ matrix.commit }}"
-          if [ -d "cvc5" ]; then
-            cd cvc5
-            git fetch origin --all
-          else
-            git clone --no-single-branch https://github.com/cvc5/cvc5.git cvc5
-            cd cvc5
+          # Copy source files but preserve the build directory
+          if [ -d "cvc5-source" ]; then
+            cp -r cvc5-source/* cvc5/ 2>/dev/null || true
+            cp -r cvc5-source/.* cvc5/ 2>/dev/null || true
+            rm -rf cvc5-source
           fi
-          git checkout $COMMIT_HASH
       
       - name: Configure CMake (for ctest discovery)
         run: |

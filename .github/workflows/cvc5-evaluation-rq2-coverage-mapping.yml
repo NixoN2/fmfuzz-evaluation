@@ -142,6 +142,26 @@ jobs:
         run: |
           pip install psutil fastcov
       
+      - name: Check paths in .gcno files
+        working-directory: cvc5/build
+        run: |
+          echo "Checking what paths are stored in .gcno files..."
+          SAMPLE_GCNO=$(find . -name "*.gcno" -type f | head -1)
+          if [ -n "$SAMPLE_GCNO" ]; then
+            echo "Sample .gcno file: $SAMPLE_GCNO"
+            echo ""
+            echo "Extracting source file paths from .gcno:"
+            strings "$SAMPLE_GCNO" | grep -E "\.cpp$|\.c$" | head -10
+            echo ""
+            echo "Checking for absolute paths:"
+            strings "$SAMPLE_GCNO" | grep -E "^/" | grep -E "\.cpp$|\.c$" | head -10
+            echo ""
+            echo "Full path context:"
+            strings "$SAMPLE_GCNO" | grep -C3 "\.cpp" | head -20
+          else
+            echo "No .gcno files found!"
+          fi
+      
       - name: Run coverage analysis
         working-directory: cvc5/build
         env:

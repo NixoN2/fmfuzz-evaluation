@@ -118,12 +118,23 @@ jobs:
           path: cvc5
           fetch-depth: 0
       
+      - name: Install LLVM/Clang 17
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: '17'
+      
+      - name: Add LLVM to PATH
+        run: echo "${{ env.LLVM_PATH }}/bin" >> $GITHUB_PATH
+      
       - name: Extract coverage binary (preserving source files)
         run: |
           mkdir -p cvc5/build
           ./scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
       
       - name: Configure CMake in build directory (for CTest discovery)
+        env:
+          CC: clang
+          CXX: clang++
         run: |
           cd cvc5/build
           cmake -DENABLE_TESTING=ON -DBUILD_TESTING=ON .. || echo "⚠️ CMake configuration failed, but continuing..."
@@ -131,24 +142,9 @@ jobs:
       - name: Install system dependencies for coverage
         run: |
           sudo apt-get update
-          # Install GCC 14 to match the toolchain used during build
-          # This ensures gcov version matches the .gcno file format
           sudo apt-get install -y \
-            gcc-14 \
-            g++-14 \
             binutils \
-            cmake \
-            libstdc++-14-dev
-          # Use GCC 14's gcov instead of system gcov
-          sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-14 100
-          # Verify GCC version
-          echo "GCC version:"
-          gcc-14 --version || gcc --version
-          echo "Gcov version:"
-          gcov --version
-          echo "Gcov path:"
-          which gcov
-          readlink -f $(which gcov) || which gcov
+            cmake
       
       - name: Set up Python
         uses: actions/setup-python@v5

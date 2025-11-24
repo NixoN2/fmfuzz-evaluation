@@ -4,6 +4,7 @@
 # - All header files (.h, .hpp, .hxx) from build directory with preserved paths
 # - The CVC5 binary
 # - compile_commands.json
+# - CMakeCache.txt and CTestTestfile.cmake (needed for ctest)
 # - .gcno files (coverage notes needed for fastcov)
 #
 # Usage: ./collect_build_artifacts.sh <build_dir> <output_dir>
@@ -99,6 +100,32 @@ else
     echo "   ⚠ Warning: compile_commands.json not found at $BUILD_DIR/compile_commands.json"
 fi
 
+# Collect CMake configuration files (needed for ctest)
+echo "🔍 Collecting CMake configuration files..."
+if [ -f "$BUILD_DIR/CMakeCache.txt" ]; then
+    cp "$BUILD_DIR/CMakeCache.txt" "$OUTPUT_DIR/CMakeCache.txt"
+    echo "   ✓ CMakeCache.txt copied"
+else
+    echo "   ⚠ Warning: CMakeCache.txt not found"
+fi
+
+# Collect CTestTestfile.cmake files (needed for ctest --show-only)
+CTEST_COUNT=0
+find "$BUILD_DIR" -name "CTestTestfile.cmake" -type f 2>/dev/null | while read -r ctest_file; do
+    rel_path="${ctest_file#$BUILD_DIR/}"
+    target_path="$OUTPUT_DIR/$rel_path"
+    mkdir -p "$(dirname "$target_path")"
+    cp "$ctest_file" "$target_path"
+    CTEST_COUNT=$((CTEST_COUNT + 1))
+done 2>/dev/null || true
+
+CTEST_COUNT=$(find "$OUTPUT_DIR" -name "CTestTestfile.cmake" -type f 2>/dev/null | wc -l || echo "0")
+if [ "$CTEST_COUNT" -gt 0 ]; then
+    echo "   ✓ Collected $CTEST_COUNT CTestTestfile.cmake files"
+else
+    echo "   ⚠ Warning: No CTestTestfile.cmake files found"
+fi
+
 # Collect .gcno files (coverage notes needed for fastcov)
 echo "🔍 Collecting .gcno files (coverage notes)..."
 GCNO_COUNT=0
@@ -122,6 +149,12 @@ echo "✅ Artifact collection complete!"
 echo "   Headers: $OUTPUT_DIR/headers/"
 echo "   Binary: $OUTPUT_DIR/bin/cvc5"
 echo "   Compile commands: $OUTPUT_DIR/compile_commands.json"
+if [ -f "$OUTPUT_DIR/CMakeCache.txt" ]; then
+    echo "   CMakeCache.txt: ✓"
+fi
+if [ "$CTEST_COUNT" -gt 0 ]; then
+    echo "   CTestTestfile.cmake: ✓ ($CTEST_COUNT files)"
+fi
 if [ "$GCNO_COUNT" -gt 0 ]; then
     echo "   Coverage notes (.gcno): $GCNO_COUNT files"
 fi
@@ -137,6 +170,16 @@ if [ -f "$OUTPUT_DIR/compile_commands.json" ]; then
     echo "   compile_commands.json: ✓"
 else
     echo "   compile_commands.json: ✗"
+fi
+if [ -f "$OUTPUT_DIR/CMakeCache.txt" ]; then
+    echo "   CMakeCache.txt: ✓"
+else
+    echo "   CMakeCache.txt: ✗"
+fi
+if [ "$CTEST_COUNT" -gt 0 ]; then
+    echo "   CTestTestfile.cmake: ✓ ($CTEST_COUNT files)"
+else
+    echo "   CTestTestfile.cmake: ✗"
 fi
 if [ "$GCNO_COUNT" -gt 0 ]; then
     echo "   .gcno files: ✓ ($GCNO_COUNT files)"

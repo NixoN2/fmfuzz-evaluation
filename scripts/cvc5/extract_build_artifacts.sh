@@ -4,6 +4,7 @@
 # - All header files to build/ with preserved paths
 # - The CVC5 binary to build/bin/cvc5
 # - compile_commands.json to build/
+# - CMakeCache.txt and CTestTestfile.cmake (needed for ctest)
 # - .gcno files (coverage notes needed for fastcov)
 #
 # Usage: ./extract_build_artifacts.sh <artifact_file> <build_dir> [extract_headers]
@@ -81,6 +82,31 @@ if [ "$EXTRACT_HEADERS" = "true" ]; then
     else
         echo "⚠ Warning: headers/ directory not found in artifacts"
     fi
+fi
+
+# Extract CMake configuration files (needed for ctest)
+if [ -f "$TMP_DIR/CMakeCache.txt" ]; then
+    cp "$TMP_DIR/CMakeCache.txt" "$BUILD_DIR/CMakeCache.txt"
+    echo "✓ CMakeCache.txt extracted"
+else
+    echo "⚠ Warning: CMakeCache.txt not found in artifacts"
+fi
+
+# Extract CTestTestfile.cmake files (needed for ctest --show-only)
+CTEST_COUNT=0
+find "$TMP_DIR" -name "CTestTestfile.cmake" -type f 2>/dev/null | while read -r ctest_file; do
+    rel_path="${ctest_file#$TMP_DIR/}"
+    target_path="$BUILD_DIR/$rel_path"
+    mkdir -p "$(dirname "$target_path")"
+    cp "$ctest_file" "$target_path"
+    CTEST_COUNT=$((CTEST_COUNT + 1))
+done 2>/dev/null || true
+
+CTEST_COUNT=$(find "$BUILD_DIR" -name "CTestTestfile.cmake" -type f 2>/dev/null | wc -l || echo "0")
+if [ "$CTEST_COUNT" -gt 0 ]; then
+    echo "✓ Extracted $CTEST_COUNT CTestTestfile.cmake files"
+else
+    echo "⚠ Warning: No CTestTestfile.cmake files found in artifacts"
 fi
 
 # Extract .gcno files (coverage notes needed for fastcov)

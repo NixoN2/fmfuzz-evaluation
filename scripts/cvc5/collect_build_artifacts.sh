@@ -20,7 +20,6 @@ fi
 
 echo "📦 Collecting build artifacts from $BUILD_DIR"
 echo "   Output directory: $OUTPUT_DIR"
-echo "   Preserving build directory structure..."
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -90,75 +89,51 @@ if [ "$GCNO_COUNT" -gt 0 ]; then
     echo "   ✓ Collected $GCNO_COUNT .gcno files"
 fi
 
-# Collect source .cpp files from source directory (../src relative to build)
-# fastcov rewrites paths from .gcno files relative to --search-directory (build/)
-# So it looks for source files at build/src/... even though .gcno contains cvc5/src/...
-# We need to place source files at src/... in artifacts so they extract to build/src/...
+# Collect source .cpp files from both checked-out source AND build directory
+# Build directory contains generated files (kind.cpp, node_manager.cpp, options.cpp, etc.)
+# fastcov looks for source files at build/src/... so we place them at src/... in artifacts
 echo "🔍 Collecting source .cpp files..."
-CPP_COUNT=0
-SRC_DIR="$BUILD_DIR/../src"
-echo "   Source directory: $SRC_DIR"
-echo "   Build directory: $BUILD_DIR"
-echo "   Output directory: $OUTPUT_DIR"
 
+# First, collect from checked-out source directory
+SRC_DIR="$BUILD_DIR/../src"
+COPIED_FILES=()
 if [ -d "$SRC_DIR" ]; then
-    echo "   ✓ Source directory exists"
-    TOTAL_SRC_FILES=$(find "$SRC_DIR" -type f -name "*.cpp" 2>/dev/null | wc -l || echo "0")
-    echo "   Found $TOTAL_SRC_FILES .cpp files in source directory"
-    
-    if [ "$TOTAL_SRC_FILES" -gt 0 ]; then
-        echo "   Copying source files to $OUTPUT_DIR/src/..."
-        COPIED=0
-        find "$SRC_DIR" -type f -name "*.cpp" 2>/dev/null | while read -r cpp_file; do
-            # Get relative path from src/ directory
-            rel_path="${cpp_file#$SRC_DIR/}"
-            # Place in output as src/... (matching build structure for fastcov)
-            target_path="$OUTPUT_DIR/src/$rel_path"
-            mkdir -p "$(dirname "$target_path")"
-            cp "$cpp_file" "$target_path"
-            COPIED=$((COPIED + 1))
-            if [ $((COPIED % 100)) -eq 0 ]; then
-                echo "   ... copied $COPIED files"
-            fi
-        done 2>/dev/null || true
-        
-        CPP_COUNT=$(find "$OUTPUT_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
-        if [ "$CPP_COUNT" -gt 0 ]; then
-            echo "   ✓ Collected $CPP_COUNT .cpp source files"
-            echo "   Sample files collected:"
-            find "$OUTPUT_DIR/src" -name "*.cpp" -type f 2>/dev/null | head -5 | sed 's/^/      /'
-        else
-            echo "   ✗ ERROR: No .cpp files found in output directory after copying"
-            echo "   Checking output directory structure:"
-            ls -la "$OUTPUT_DIR/src" 2>/dev/null | head -10 || echo "      Output src/ directory does not exist"
-        fi
-    else
-        echo "   ⚠ Warning: No .cpp files found in source directory"
-    fi
-else
-    echo "   ✗ ERROR: Source directory not found at $SRC_DIR"
-    echo "   Build directory contents:"
-    ls -la "$BUILD_DIR/.." 2>/dev/null | head -10 || echo "      Cannot list parent directory"
+    find "$SRC_DIR" -type f -name "*.cpp" 2>/dev/null | while read -r cpp_file; do
+        rel_path="${cpp_file#$SRC_DIR/}"
+        target_path="$OUTPUT_DIR/src/$rel_path"
+        mkdir -p "$(dirname "$target_path")"
+        cp "$cpp_file" "$target_path"
+        echo "   [SOURCE] $rel_path"
+    done 2>/dev/null || true
 fi
 
-# Summary
+# Then, collect generated files from build directory (overwrites if needed)
+if [ -d "$BUILD_DIR/src" ]; then
+    find "$BUILD_DIR/src" -type f -name "*.cpp" 2>/dev/null | while read -r cpp_file; do
+        rel_path="${cpp_file#$BUILD_DIR/src/}"
+        target_path="$OUTPUT_DIR/src/$rel_path"
+        mkdir -p "$(dirname "$target_path")"
+        cp "$cpp_file" "$target_path"
+        echo "   [GENERATED] $rel_path"
+    done 2>/dev/null || true
+fi
+
+CPP_COUNT=$(find "$OUTPUT_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
+if [ "$CPP_COUNT" -gt 0 ]; then
+    echo "   ✓ Collected $CPP_COUNT .cpp source files"
+    echo ""
+    echo "📋 Full list of collected .cpp files:"
+    find "$OUTPUT_DIR/src" -name "*.cpp" -type f 2>/dev/null | sort | sed 's|^'"$OUTPUT_DIR/src/"'||' | sed 's/^/      /'
+fi
+
 echo ""
 echo "✅ Artifact collection complete!"
-echo "   All files preserve build directory structure"
 echo ""
-echo "📊 Summary:"
+echo "📊 Collection summary:"
+echo "   Binary: $([ -f "$OUTPUT_DIR/bin/cvc5" ] && echo "✓" || echo "✗")"
 echo "   Headers: $HEADER_COUNT"
 echo "   Source files (.cpp): $CPP_COUNT"
 echo "   .gcno files: $GCNO_COUNT"
 echo "   CTestTestfile.cmake: $CTEST_COUNT"
-if [ -f "$OUTPUT_DIR/bin/cvc5" ]; then
-    echo "   Binary: ✓"
-else
-    echo "   Binary: ✗"
-fi
-if [ -f "$OUTPUT_DIR/compile_commands.json" ]; then
-    echo "   compile_commands.json: ✓"
-fi
-if [ -f "$OUTPUT_DIR/CMakeCache.txt" ]; then
-    echo "   CMakeCache.txt: ✓"
-fi
+echo "   compile_commands.json: $([ -f "$OUTPUT_DIR/compile_commands.json" ] && echo "✓" || echo "✗")"
+echo "   CMakeCache.txt: $([ -f "$OUTPUT_DIR/CMakeCache.txt" ] && echo "✓" || echo "✗")"

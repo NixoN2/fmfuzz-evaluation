@@ -26,8 +26,6 @@ fi
 
 echo "📦 Extracting build artifacts from $ARTIFACT_FILE"
 echo "   Build directory: $BUILD_DIR"
-echo "   Extract headers: $EXTRACT_HEADERS"
-echo "   Preserving build directory structure..."
 
 mkdir -p "$BUILD_DIR"
 
@@ -92,66 +90,21 @@ fi
 
 # Extract source .cpp files (preserving structure)
 # fastcov rewrites paths relative to --search-directory, so it looks for build/src/...
-echo "🔍 Extracting source .cpp files..."
 CPP_COUNT=0
 if [ -d "$TMP_DIR/src" ]; then
-    echo "   Found src/ directory in artifacts"
-    TOTAL_IN_ARCHIVE=$(find "$TMP_DIR/src" -type f -name "*.cpp" 2>/dev/null | wc -l || echo "0")
-    echo "   Found $TOTAL_IN_ARCHIVE .cpp files in archive"
+    echo "   Extracting .cpp files from archive..."
+    find "$TMP_DIR/src" -type f -name "*.cpp" 2>/dev/null | while read -r cpp_file; do
+        rel_path="${cpp_file#$TMP_DIR/}"
+        target_path="$BUILD_DIR/$rel_path"
+        mkdir -p "$(dirname "$target_path")"
+        cp "$cpp_file" "$target_path"
+        echo "   [ARCHIVE] ${rel_path#src/}"
+    done 2>/dev/null || true
     
-    if [ "$TOTAL_IN_ARCHIVE" -gt 0 ]; then
-        echo "   Extracting to $BUILD_DIR/src/..."
-        EXTRACTED=0
-        find "$TMP_DIR/src" -type f -name "*.cpp" 2>/dev/null | while read -r cpp_file; do
-            rel_path="${cpp_file#$TMP_DIR/}"
-            target_path="$BUILD_DIR/$rel_path"
-            mkdir -p "$(dirname "$target_path")"
-            cp "$cpp_file" "$target_path"
-            EXTRACTED=$((EXTRACTED + 1))
-            if [ $((EXTRACTED % 100)) -eq 0 ]; then
-                echo "   ... extracted $EXTRACTED files"
-            fi
-        done 2>/dev/null || true
-        
-        CPP_COUNT=$(find "$BUILD_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
-        if [ "$CPP_COUNT" -gt 0 ]; then
-            echo "✓ Extracted $CPP_COUNT .cpp source files"
-            echo "   Sample extracted files:"
-            find "$BUILD_DIR/src" -name "*.cpp" -type f 2>/dev/null | head -5 | sed 's/^/      /'
-            
-            # Verify a specific file that fastcov will look for
-            SAMPLE_GCNO=$(find "$BUILD_DIR" -name "*.gcno" -type f | head -1)
-            if [ -n "$SAMPLE_GCNO" ]; then
-                ABSOLUTE_PATH=$(strings "$SAMPLE_GCNO" | grep -E "^/.*\.cpp$" | head -1)
-                if [[ "$ABSOLUTE_PATH" == *"/cvc5/"* ]]; then
-                    REL_PATH="${ABSOLUTE_PATH#*cvc5/}"
-                    EXPECTED_PATH="$BUILD_DIR/$REL_PATH"
-                    echo "   Verifying fastcov path resolution:"
-                    echo "     .gcno contains: $ABSOLUTE_PATH"
-                    echo "     fastcov will look for: $EXPECTED_PATH"
-                    if [ -f "$EXPECTED_PATH" ]; then
-                        echo "     ✓ File exists at expected path"
-                    else
-                        echo "     ✗ ERROR: File does NOT exist at expected path"
-                        echo "     Checking if parent directory exists:"
-                        ls -la "$(dirname "$EXPECTED_PATH")" 2>/dev/null | head -5 || echo "       Parent directory does not exist"
-                    fi
-                fi
-            fi
-        else
-            echo "✗ ERROR: No .cpp files found in build directory after extraction"
-            echo "   Checking build directory structure:"
-            ls -la "$BUILD_DIR/src" 2>/dev/null | head -10 || echo "      Build src/ directory does not exist"
-        fi
-    else
-        echo "   ⚠ Warning: No .cpp files found in archive src/ directory"
-        echo "   Archive src/ directory contents:"
-        ls -la "$TMP_DIR/src" 2>/dev/null | head -10 || echo "      Archive src/ directory does not exist"
+    CPP_COUNT=$(find "$BUILD_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
+    if [ "$CPP_COUNT" -gt 0 ]; then
+        echo "✓ Extracted $CPP_COUNT .cpp source files from archive"
     fi
-else
-    echo "⚠ Warning: src/ directory not found in artifacts"
-    echo "   Archive contents:"
-    ls -la "$TMP_DIR" 2>/dev/null | head -20 || echo "      Cannot list archive contents"
 fi
 
 # Extract headers if requested
@@ -170,101 +123,28 @@ if [ "$EXTRACT_HEADERS" = "true" ]; then
     fi
 fi
 
-# Copy ALL source files from checked-out cvc5 to build/src/ for fastcov path resolution
-# This ensures files exist at both original paths (cvc5/src/...) and rewritten paths (cvc5/build/src/...)
+# Copy source files from checked-out cvc5 to build/src/ for fastcov path resolution
 # .gcno files contain absolute paths like /path/to/cvc5/src/... but fastcov looks for build/src/...
-# We ALWAYS copy all files (overwriting if needed) to ensure complete coverage
 SRC_BASE="$BUILD_DIR/../src"
 if [ -d "$SRC_BASE" ]; then
-    echo "🔍 Copying ALL source files from checked-out cvc5 to build directory..."
-    
-    # Count files before copying
-    CHECKOUT_COUNT=$(find "$SRC_BASE" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
-    BUILD_COUNT_BEFORE=$(find "$BUILD_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
-    
-    if [ "$CHECKOUT_COUNT" -gt 0 ]; then
-        # Use rsync for efficient copying, or fall back to find+cp
-        if command -v rsync >/dev/null 2>&1; then
-            echo "   Using rsync to copy all .cpp files..."
-            rsync -a --include='*/' --include='*.cpp' --exclude='*' "$SRC_BASE/" "$BUILD_DIR/src/" 2>/dev/null || {
-                echo "   rsync failed, falling back to find+cp..."
-                # Fallback to find+cp with temp file
-                TEMP_FILE_LIST=$(mktemp)
-                find "$SRC_BASE" -type f -name "*.cpp" 2>/dev/null > "$TEMP_FILE_LIST" || true
-                while IFS= read -r cpp_file; do
-                    [ -z "$cpp_file" ] && continue
-                    rel_path="${cpp_file#$SRC_BASE/}"
-                    build_target="$BUILD_DIR/src/$rel_path"
-                    mkdir -p "$(dirname "$build_target")"
-                    cp "$cpp_file" "$build_target"
-                done < "$TEMP_FILE_LIST"
-                rm -f "$TEMP_FILE_LIST"
-            }
-        else
-            # Fallback: use find+cp with temp file to avoid subshell issues
-            echo "   Using find+cp to copy all .cpp files..."
-            TEMP_FILE_LIST=$(mktemp)
-            find "$SRC_BASE" -type f -name "*.cpp" 2>/dev/null > "$TEMP_FILE_LIST" || true
-            
-            COPIED=0
-            while IFS= read -r cpp_file; do
-                [ -z "$cpp_file" ] && continue
-                rel_path="${cpp_file#$SRC_BASE/}"
-                build_target="$BUILD_DIR/src/$rel_path"
-                mkdir -p "$(dirname "$build_target")"
-                cp "$cpp_file" "$build_target"
-                COPIED=$((COPIED + 1))
-                if [ $((COPIED % 100)) -eq 0 ]; then
-                    echo "   ... copied $COPIED files"
-                fi
-            done < "$TEMP_FILE_LIST"
-            rm -f "$TEMP_FILE_LIST"
-        fi
-        
-        BUILD_COUNT_AFTER=$(find "$BUILD_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
-        
-        echo "✓ Ensured all .cpp files are in build/src/"
-        echo "   Total .cpp files in build/src/: $BUILD_COUNT_AFTER (was $BUILD_COUNT_BEFORE, checkout has $CHECKOUT_COUNT)"
-        
-        if [ "$BUILD_COUNT_AFTER" -lt "$CHECKOUT_COUNT" ]; then
-            echo "   ⚠ Warning: Fewer files in build/src/ than in checkout (expected $CHECKOUT_COUNT, got $BUILD_COUNT_AFTER)"
-        fi
-        
-        # Verify some specific files that fastcov commonly looks for
-        echo "   Verifying specific files that fastcov needs:"
-        TEST_FILES=(
-            "api/cpp/cvc5_proof_rule.cpp"
-            "expr/node_manager.cpp"
-            "expr/kind.cpp"
-            "options/options.cpp"
-            "rewriter/rewrites.cpp"
-        )
-        for test_file in "${TEST_FILES[@]}"; do
-            if [ -f "$BUILD_DIR/src/$test_file" ]; then
-                echo "     ✓ $test_file exists"
-            else
-                echo "     ✗ $test_file MISSING"
-                # Check if it exists in checkout
-                if [ -f "$SRC_BASE/$test_file" ]; then
-                    echo "       (exists in checkout at $SRC_BASE/$test_file)"
-                else
-                    echo "       (also missing in checkout)"
-                fi
-            fi
-        done
+    echo "   Copying .cpp files from checked-out source..."
+    if command -v rsync >/dev/null 2>&1; then
+        rsync -a --include='*/' --include='*.cpp' --exclude='*' "$SRC_BASE/" "$BUILD_DIR/src/" 2>/dev/null || true
     else
-        echo "⚠ Warning: No .cpp files found in checked-out source at $SRC_BASE"
+        find "$SRC_BASE" -type f -name "*.cpp" 2>/dev/null | while read -r cpp_file; do
+            [ -z "$cpp_file" ] && continue
+            rel_path="${cpp_file#$SRC_BASE/}"
+            build_target="$BUILD_DIR/src/$rel_path"
+            mkdir -p "$(dirname "$build_target")"
+            cp "$cpp_file" "$build_target"
+            echo "   [CHECKOUT] $rel_path"
+        done 2>/dev/null || true
     fi
-else
-    echo "⚠ Warning: Checked-out source directory not found at $SRC_BASE"
-    echo "   Source files may not be available at original paths for fastcov"
-    echo "   Expected path: $SRC_BASE"
-    echo "   Build directory: $BUILD_DIR"
-    echo "   Parent of build: $(dirname "$BUILD_DIR")"
-    if [ -d "$(dirname "$BUILD_DIR")" ]; then
-        echo "   Contents of parent directory:"
-        ls -la "$(dirname "$BUILD_DIR")" | head -10
-    fi
+    # Update count after copying from checkout
+    CPP_COUNT=$(find "$BUILD_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
+    echo ""
+    echo "📋 Full list of .cpp files in build/src/:"
+    find "$BUILD_DIR/src" -name "*.cpp" -type f 2>/dev/null | sort | sed 's|^'"$BUILD_DIR/src/"'||' | sed 's/^/      /'
 fi
 
 # Verify binary
@@ -272,4 +152,14 @@ if [ -f "$BUILD_DIR/bin/cvc5" ]; then
     "$BUILD_DIR/bin/cvc5" --version > /dev/null 2>&1 && echo "✓ Binary verified" || echo "⚠ Binary verification failed"
 fi
 
+echo ""
 echo "✅ Extraction complete!"
+echo ""
+echo "📊 Extraction summary:"
+echo "   Binary: $([ -f "$BUILD_DIR/bin/cvc5" ] && echo "✓" || echo "✗")"
+echo "   Headers: $HEADER_COUNT"
+echo "   Source files (.cpp): $CPP_COUNT"
+echo "   .gcno files: $GCNO_COUNT"
+echo "   CTestTestfile.cmake: $CTEST_COUNT"
+echo "   compile_commands.json: $([ -f "$BUILD_DIR/compile_commands.json" ] && echo "✓" || echo "✗")"
+echo "   CMakeCache.txt: $([ -f "$BUILD_DIR/CMakeCache.txt" ] && echo "✓" || echo "✗")"

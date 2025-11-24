@@ -114,6 +114,24 @@ jobs:
         run: |
           ./scripts/cvc5/collect_build_artifacts.sh cvc5/build .artifacts-coverage
       
+      - name: Show build directory structure
+        run: |
+          echo "=== Full build directory structure ==="
+          echo "Build directory: cvc5/build"
+          echo ""
+          if [ -d "cvc5/build" ]; then
+            echo "Directory tree:"
+            find cvc5/build -type f -o -type d | sort | sed 's|^cvc5/build/||' | sed 's|^|  |'
+            echo ""
+            echo "File count by type:"
+            echo "  .cpp files: $(find cvc5/build -name "*.cpp" -type f 2>/dev/null | wc -l)"
+            echo "  .h files: $(find cvc5/build -name "*.h" -type f 2>/dev/null | wc -l)"
+            echo "  .gcno files: $(find cvc5/build -name "*.gcno" -type f 2>/dev/null | wc -l)"
+            echo "  Total files: $(find cvc5/build -type f 2>/dev/null | wc -l)"
+          else
+            echo "Build directory does not exist"
+          fi
+      
       - name: Compress coverage artifacts
         run: |
           cd .artifacts-coverage

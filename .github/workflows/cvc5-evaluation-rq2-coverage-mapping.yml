@@ -126,13 +126,69 @@ jobs:
       - name: Add LLVM to PATH
         run: echo "${{ env.LLVM_PATH }}/bin" >> $GITHUB_PATH
       
-      - name: Extract coverage binary (preserving source files)
+      - name: Extract coverage binary
         run: |
           mkdir -p cvc5/build
           ./scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
           # CMakeCache.txt and CTestTestfile.cmake are now included in artifacts
-          # Source .cpp files are also included for fastcov exclusion markers
           # No need to reconfigure CMake - ctest will work with extracted files
+      
+      - name: Verify directory structure and fix fastcov path resolution
+        run: |
+          echo "=== Verifying directory structure ==="
+          echo "Workspace root: $GITHUB_WORKSPACE"
+          echo ""
+          echo "=== Checking source files location ==="
+          echo "Source files at cvc5/src/:"
+          find cvc5/src -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0"
+          echo "Sample source files:"
+          find cvc5/src -name "*.cpp" -type f 2>/dev/null || echo "No .cpp files found"
+          echo ""
+          echo "=== Checking .gcno files and path resolution ==="
+          SAMPLE_GCNO=$(find cvc5/build -name "*.gcno" -type f | head -1)
+          if [ -n "$SAMPLE_GCNO" ]; then
+            echo "Sample .gcno: $SAMPLE_GCNO"
+            ABSOLUTE_PATH=$(strings "$SAMPLE_GCNO" | grep -E "^/.*\.cpp$" | head -1)
+            echo "Path in .gcno: $ABSOLUTE_PATH"
+            if [ -f "$ABSOLUTE_PATH" ]; then
+              echo "✓ Source file exists at absolute path"
+            else
+              echo "✗ Source file does NOT exist at absolute path"
+            fi
+            # fastcov rewrites paths relative to --search-directory (cvc5/build)
+            # Extract the relative path from cvc5/ onwards
+            if [[ "$ABSOLUTE_PATH" == *"/cvc5/"* ]]; then
+              REL_PATH="${ABSOLUTE_PATH#*cvc5/}"
+              BUILD_PATH="$GITHUB_WORKSPACE/cvc5/build/$REL_PATH"
+              echo "fastcov will look for: $BUILD_PATH"
+              if [ -f "$BUILD_PATH" ]; then
+                echo "✓ File exists at fastcov's expected path"
+              else
+                echo "✗ File does NOT exist at fastcov's expected path"
+                echo "  Creating symlink: cvc5/build/src -> ../src"
+                cd cvc5/build
+                if [ ! -e src ]; then
+                  ln -s ../src src
+                  echo "✓ Created symlink"
+                else
+                  echo "⚠ src already exists (might conflict)"
+                  echo "  Checking what's in cvc5/build/src:"
+                  ls -la cvc5/build/src/ | head -20
+                fi
+              fi
+            fi
+          fi
+          echo ""
+          echo "=== Final structure check ==="
+          echo "cvc5/build structure:"
+          ls -la cvc5/build/
+          echo ""
+          echo "cvc5/build/src structure (if exists):"
+          if [ -e cvc5/build/src ]; then
+            ls -la cvc5/build/src/ | head -20
+          else
+            echo "src does not exist in build directory"
+          fi
       
       - name: Set up Python
         uses: actions/setup-python@v5

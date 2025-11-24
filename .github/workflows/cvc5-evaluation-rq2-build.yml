@@ -83,14 +83,6 @@ jobs:
       - name: Add LLVM to PATH
         run: echo "${{ env.LLVM_PATH }}/bin" >> $GITHUB_PATH
       
-      - name: Install GCC 14 for coverage build
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-14 \
-            g++-14 \
-            libstdc++-14-dev
-      
       - name: Clean build for coverage
         run: |
           if [ -d "cvc5/build" ]; then
@@ -99,8 +91,6 @@ jobs:
       
       - name: Build CVC5 coverage binary
         run: |
-          # Use Clang with GCC 14 toolchain for coverage
-          # GCC 14 is installed above to ensure consistent toolchain
           export CXX="clang++ --gcc-toolchain=/usr"
           export CC="clang --gcc-toolchain=/usr"
           ./fmfuzz-dev/scripts/cvc5/build.sh --static --coverage

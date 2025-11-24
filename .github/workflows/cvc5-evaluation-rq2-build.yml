@@ -83,6 +83,18 @@ jobs:
       - name: Add LLVM to PATH
         run: echo "${{ env.LLVM_PATH }}/bin" >> $GITHUB_PATH
       
+      - name: Install GCC 14 (for consistent toolchain)
+        run: |
+          # Install GCC 14 to ensure consistent toolchain version
+          # Clang will use this via --gcc-toolchain=/usr
+          sudo apt-get update
+          sudo apt-get install -y gcc-14 g++-14 libstdc++-14-dev
+          # Set GCC 14 as default so Clang picks it up
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 60
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 60
+          sudo update-alternatives --set gcc /usr/bin/gcc-14
+          sudo update-alternatives --set g++ /usr/bin/g++-14
+      
       - name: Clean build for coverage
         run: |
           if [ -d "cvc5/build" ]; then
@@ -91,9 +103,9 @@ jobs:
       
       - name: Build CVC5 coverage binary
         run: |
-          # Use Clang with system GCC toolchain (matches fmfuzz-dev exactly)
+          # Use Clang with GCC 14 toolchain (explicitly configured above)
           # build.sh will install system gcc for coverage tools (lcov, fastcov)
-          # Clang uses --gcc-toolchain=/usr which picks highest GCC version on runner
+          # But Clang uses GCC 14 via --gcc-toolchain=/usr (now set as default)
           export CXX="clang++ --gcc-toolchain=/usr"
           export CC="clang --gcc-toolchain=/usr"
           ./fmfuzz-dev/scripts/cvc5/build.sh --static --coverage

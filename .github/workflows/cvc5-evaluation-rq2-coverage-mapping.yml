@@ -146,8 +146,18 @@ jobs:
           python3 -m venv venv-3.12.3 --system-site-packages || python3 -m venv venv-3.12.3
           echo "✓ Created Python venv for CTest"
       
-      - name: Install Python dependencies
+      - name: Install GCC 14 and coverage tools (matching build)
         run: |
+          # Install GCC 14 to match the build workflow
+          # Build workflow sets GCC 14 as default, so we need gcov-14 here
+          sudo apt-get update
+          sudo apt-get install -y gcc-14 g++-14 libstdc++-14-dev
+          # Configure gcov to use GCC 14's version
+          sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-14 60
+          sudo update-alternatives --set gcov /usr/bin/gcov-14
+          # Verify gcov version matches
+          echo "GCC version: $(gcc-14 --version | head -1)"
+          echo "Gcov version: $(gcov-14 --version | head -1)"
           pip install psutil fastcov
       
       - name: Run test and diagnose coverage collection

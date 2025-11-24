@@ -1,11 +1,8 @@
 #!/bin/bash
-# Collect CVC5 build artifacts for libclang parsing and coverage analysis
-# This script collects:
-# - All header files (.h, .hpp, .hxx) from build directory with preserved paths
-# - The CVC5 binary
-# - compile_commands.json
-# - CMakeCache.txt and CTestTestfile.cmake (needed for ctest)
-# - .gcno files (coverage notes needed for fastcov)
+# Collect CVC5 build artifacts preserving build directory structure
+# This script collects everything needed for coverage analysis:
+# - Headers, source files, binary, CMake files, .gcno files
+# - All files preserve their relative paths from build/
 #
 # Usage: ./collect_build_artifacts.sh <build_dir> <output_dir>
 # Example: ./collect_build_artifacts.sh cvc5/build artifacts
@@ -22,68 +19,13 @@ fi
 
 echo "📦 Collecting build artifacts from $BUILD_DIR"
 echo "   Output directory: $OUTPUT_DIR"
+echo "   Preserving build directory structure..."
 
-# Create output directory structure
-mkdir -p "$OUTPUT_DIR/headers"
-mkdir -p "$OUTPUT_DIR/bin"
+mkdir -p "$OUTPUT_DIR"
 
-# Collect all header files with preserved directory structure
-echo "🔍 Collecting header files..."
-
-# Collect headers from include/
-if [ -d "$BUILD_DIR/include" ]; then
-    find "$BUILD_DIR/include" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) | while read -r header; do
-        rel_path="${header#$BUILD_DIR/}"
-        target_path="$OUTPUT_DIR/headers/$rel_path"
-        mkdir -p "$(dirname "$target_path")"
-        cp "$header" "$target_path"
-    done
-    INCLUDE_COUNT=$(find "$BUILD_DIR/include" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) 2>/dev/null | wc -l)
-    echo "   ✓ Collected $INCLUDE_COUNT headers from include/"
-fi
-
-# Collect headers from src/
-if [ -d "$BUILD_DIR/src" ]; then
-    find "$BUILD_DIR/src" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) | while read -r header; do
-        rel_path="${header#$BUILD_DIR/}"
-        target_path="$OUTPUT_DIR/headers/$rel_path"
-        mkdir -p "$(dirname "$target_path")"
-        cp "$header" "$target_path"
-    done
-    SRC_COUNT=$(find "$BUILD_DIR/src" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) 2>/dev/null | wc -l)
-    echo "   ✓ Collected $SRC_COUNT headers from src/"
-fi
-
-# Collect headers from deps/include/
-if [ -d "$BUILD_DIR/deps/include" ]; then
-    find "$BUILD_DIR/deps/include" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) | while read -r header; do
-        rel_path="${header#$BUILD_DIR/}"
-        target_path="$OUTPUT_DIR/headers/$rel_path"
-        mkdir -p "$(dirname "$target_path")"
-        cp "$header" "$target_path"
-    done
-    DEPS_INCLUDE_COUNT=$(find "$BUILD_DIR/deps/include" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) 2>/dev/null | wc -l)
-    echo "   ✓ Collected $DEPS_INCLUDE_COUNT headers from deps/include/"
-fi
-
-# Collect headers from deps/src/
-if [ -d "$BUILD_DIR/deps/src" ]; then
-    find "$BUILD_DIR/deps/src" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) | while read -r header; do
-        rel_path="${header#$BUILD_DIR/}"
-        target_path="$OUTPUT_DIR/headers/$rel_path"
-        mkdir -p "$(dirname "$target_path")"
-        cp "$header" "$target_path"
-    done
-    DEPS_SRC_COUNT=$(find "$BUILD_DIR/deps/src" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) 2>/dev/null | wc -l)
-    echo "   ✓ Collected $DEPS_SRC_COUNT headers from deps/src/"
-fi
-
-# Count total headers
-TOTAL_HEADERS=$(find "$OUTPUT_DIR/headers" -type f 2>/dev/null | wc -l || echo "0")
-echo "   Total headers collected: $TOTAL_HEADERS"
-
-# Copy binary
+# Collect binary
 if [ -f "$BUILD_DIR/bin/cvc5" ]; then
+    mkdir -p "$OUTPUT_DIR/bin"
     cp "$BUILD_DIR/bin/cvc5" "$OUTPUT_DIR/bin/cvc5"
     chmod +x "$OUTPUT_DIR/bin/cvc5"
     BINARY_SIZE=$(du -h "$OUTPUT_DIR/bin/cvc5" | cut -f1)
@@ -92,45 +34,19 @@ else
     echo "   ⚠ Warning: Binary not found at $BUILD_DIR/bin/cvc5"
 fi
 
-# Copy compile_commands.json
+# Collect compile_commands.json
 if [ -f "$BUILD_DIR/compile_commands.json" ]; then
     cp "$BUILD_DIR/compile_commands.json" "$OUTPUT_DIR/compile_commands.json"
     echo "   ✓ compile_commands.json copied"
-else
-    echo "   ⚠ Warning: compile_commands.json not found at $BUILD_DIR/compile_commands.json"
 fi
 
-# Collect source files (.cpp) for fastcov exclusion markers
-echo "🔍 Collecting source files (.cpp) for fastcov exclusion markers..."
-CPP_COUNT=0
-if [ -d "$BUILD_DIR/../src" ]; then
-    # Collect .cpp files from source directory (parent of build)
-    find "$BUILD_DIR/../src" -type f -name "*.cpp" | while read -r cpp_file; do
-        rel_path="${cpp_file#$BUILD_DIR/../}"
-        target_path="$OUTPUT_DIR/sources/$rel_path"
-        mkdir -p "$(dirname "$target_path")"
-        cp "$cpp_file" "$target_path"
-    done
-    CPP_COUNT=$(find "$OUTPUT_DIR/sources" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
-    if [ "$CPP_COUNT" -gt 0 ]; then
-        echo "   ✓ Collected $CPP_COUNT .cpp source files"
-    else
-        echo "   ⚠ Warning: No .cpp source files found"
-    fi
-else
-    echo "   ⚠ Warning: Source directory not found at $BUILD_DIR/../src"
-fi
-
-# Collect CMake configuration files (needed for ctest)
-echo "🔍 Collecting CMake configuration files..."
+# Collect CMakeCache.txt
 if [ -f "$BUILD_DIR/CMakeCache.txt" ]; then
     cp "$BUILD_DIR/CMakeCache.txt" "$OUTPUT_DIR/CMakeCache.txt"
     echo "   ✓ CMakeCache.txt copied"
-else
-    echo "   ⚠ Warning: CMakeCache.txt not found"
 fi
 
-# Collect CTestTestfile.cmake files (needed for ctest --show-only)
+# Collect all CTestTestfile.cmake files (preserving structure)
 CTEST_COUNT=0
 find "$BUILD_DIR" -name "CTestTestfile.cmake" -type f 2>/dev/null | while read -r ctest_file; do
     rel_path="${ctest_file#$BUILD_DIR/}"
@@ -143,48 +59,68 @@ done 2>/dev/null || true
 CTEST_COUNT=$(find "$OUTPUT_DIR" -name "CTestTestfile.cmake" -type f 2>/dev/null | wc -l || echo "0")
 if [ "$CTEST_COUNT" -gt 0 ]; then
     echo "   ✓ Collected $CTEST_COUNT CTestTestfile.cmake files"
-else
-    echo "   ⚠ Warning: No CTestTestfile.cmake files found"
 fi
 
-# Collect .gcno files (coverage notes needed for fastcov)
-echo "🔍 Collecting .gcno files (coverage notes)..."
+# Collect all headers (.h, .hpp, .hxx) preserving structure
+HEADER_COUNT=0
+find "$BUILD_DIR" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) 2>/dev/null | while read -r header; do
+    rel_path="${header#$BUILD_DIR/}"
+    target_path="$OUTPUT_DIR/$rel_path"
+    mkdir -p "$(dirname "$target_path")"
+    cp "$header" "$target_path"
+done 2>/dev/null || true
+
+HEADER_COUNT=$(find "$OUTPUT_DIR" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) 2>/dev/null | wc -l || echo "0")
+if [ "$HEADER_COUNT" -gt 0 ]; then
+    echo "   ✓ Collected $HEADER_COUNT header files"
+fi
+
+# Collect all .gcno files (coverage notes) preserving structure
 GCNO_COUNT=0
-if find "$BUILD_DIR" -name "*.gcno" -type f 2>/dev/null | head -1 | grep -q .; then
-    # Copy all .gcno files preserving directory structure
-    find "$BUILD_DIR" -name "*.gcno" -type f | while read -r gcno_file; do
-        rel_path="${gcno_file#$BUILD_DIR/}"
-        target_path="$OUTPUT_DIR/$rel_path"
-        mkdir -p "$(dirname "$target_path")"
-        cp "$gcno_file" "$target_path"
-    done
-    GCNO_COUNT=$(find "$OUTPUT_DIR" -name "*.gcno" -type f 2>/dev/null | wc -l || echo "0")
+find "$BUILD_DIR" -name "*.gcno" -type f 2>/dev/null | while read -r gcno_file; do
+    rel_path="${gcno_file#$BUILD_DIR/}"
+    target_path="$OUTPUT_DIR/$rel_path"
+    mkdir -p "$(dirname "$target_path")"
+    cp "$gcno_file" "$target_path"
+done 2>/dev/null || true
+
+GCNO_COUNT=$(find "$OUTPUT_DIR" -name "*.gcno" -type f 2>/dev/null | wc -l || echo "0")
+if [ "$GCNO_COUNT" -gt 0 ]; then
     echo "   ✓ Collected $GCNO_COUNT .gcno files"
-else
-    echo "   ⚠ Warning: No .gcno files found (coverage build may not have .gcno files)"
 fi
 
-# Create summary
+# Collect source .cpp files from source directory (../src relative to build)
+# These need to be placed in build/src/ structure for fastcov
+CPP_COUNT=0
+SRC_DIR="$BUILD_DIR/../src"
+if [ -d "$SRC_DIR" ]; then
+    find "$SRC_DIR" -type f -name "*.cpp" 2>/dev/null | while read -r cpp_file; do
+        # Get relative path from src/ directory
+        rel_path="${cpp_file#$SRC_DIR/}"
+        # Place in output as src/... (matching build structure)
+        target_path="$OUTPUT_DIR/src/$rel_path"
+        mkdir -p "$(dirname "$target_path")"
+        cp "$cpp_file" "$target_path"
+    done 2>/dev/null || true
+    
+    CPP_COUNT=$(find "$OUTPUT_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
+    if [ "$CPP_COUNT" -gt 0 ]; then
+        echo "   ✓ Collected $CPP_COUNT .cpp source files"
+    fi
+else
+    echo "   ⚠ Warning: Source directory not found at $SRC_DIR"
+fi
+
+# Summary
 echo ""
 echo "✅ Artifact collection complete!"
-echo "   Headers: $OUTPUT_DIR/headers/"
-if [ "$CPP_COUNT" -gt 0 ]; then
-    echo "   Source files (.cpp): $CPP_COUNT files"
-fi
-echo "   Binary: $OUTPUT_DIR/bin/cvc5"
-echo "   Compile commands: $OUTPUT_DIR/compile_commands.json"
-if [ -f "$OUTPUT_DIR/CMakeCache.txt" ]; then
-    echo "   CMakeCache.txt: ✓"
-fi
-if [ "$CTEST_COUNT" -gt 0 ]; then
-    echo "   CTestTestfile.cmake: ✓ ($CTEST_COUNT files)"
-fi
-if [ "$GCNO_COUNT" -gt 0 ]; then
-    echo "   Coverage notes (.gcno): $GCNO_COUNT files"
-fi
+echo "   All files preserve build directory structure"
 echo ""
 echo "📊 Summary:"
-echo "   Total header files: $TOTAL_HEADERS"
+echo "   Headers: $HEADER_COUNT"
+echo "   Source files (.cpp): $CPP_COUNT"
+echo "   .gcno files: $GCNO_COUNT"
+echo "   CTestTestfile.cmake: $CTEST_COUNT"
 if [ -f "$OUTPUT_DIR/bin/cvc5" ]; then
     echo "   Binary: ✓"
 else
@@ -192,27 +128,7 @@ else
 fi
 if [ -f "$OUTPUT_DIR/compile_commands.json" ]; then
     echo "   compile_commands.json: ✓"
-else
-    echo "   compile_commands.json: ✗"
 fi
 if [ -f "$OUTPUT_DIR/CMakeCache.txt" ]; then
     echo "   CMakeCache.txt: ✓"
-else
-    echo "   CMakeCache.txt: ✗"
 fi
-if [ "$CPP_COUNT" -gt 0 ]; then
-    echo "   Source files (.cpp): ✓ ($CPP_COUNT files)"
-else
-    echo "   Source files (.cpp): ✗"
-fi
-if [ "$CTEST_COUNT" -gt 0 ]; then
-    echo "   CTestTestfile.cmake: ✓ ($CTEST_COUNT files)"
-else
-    echo "   CTestTestfile.cmake: ✗"
-fi
-if [ "$GCNO_COUNT" -gt 0 ]; then
-    echo "   .gcno files: ✓ ($GCNO_COUNT files)"
-else
-    echo "   .gcno files: ✗"
-fi
-

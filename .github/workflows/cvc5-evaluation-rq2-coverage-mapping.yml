@@ -137,12 +137,11 @@ jobs:
         run: |
           echo "=== Verifying directory structure ==="
           echo "Workspace root: $GITHUB_WORKSPACE"
+          echo "Current directory: $(pwd)"
           echo ""
           echo "=== Checking source files location ==="
           echo "Source files at cvc5/src/:"
           find cvc5/src -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0"
-          echo "Sample source files:"
-          find cvc5/src -name "*.cpp" -type f 2>/dev/null || echo "No .cpp files found"
           echo ""
           echo "=== Checking .gcno files and path resolution ==="
           SAMPLE_GCNO=$(find cvc5/build -name "*.gcno" -type f | head -1)
@@ -166,12 +165,13 @@ jobs:
               else
                 echo "✗ File does NOT exist at fastcov's expected path"
                 echo "  Creating symlink: cvc5/build/src -> ../src"
-                cd cvc5/build
-                if [ ! -e src ]; then
+                if [ ! -e cvc5/build/src ]; then
+                  cd cvc5/build
                   ln -s ../src src
                   echo "✓ Created symlink"
+                  cd ../..
                 else
-                  echo "⚠ src already exists (might conflict)"
+                  echo "⚠ src already exists in build directory"
                   echo "  Checking what's in cvc5/build/src:"
                   ls -la cvc5/build/src/ | head -20
                 fi
@@ -181,7 +181,7 @@ jobs:
           echo ""
           echo "=== Final structure check ==="
           echo "cvc5/build structure:"
-          ls -la cvc5/build/
+          ls -la cvc5/build/ || echo "cvc5/build does not exist"
           echo ""
           echo "cvc5/build/src structure (if exists):"
           if [ -e cvc5/build/src ]; then

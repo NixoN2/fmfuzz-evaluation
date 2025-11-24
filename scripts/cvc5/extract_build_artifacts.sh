@@ -1,6 +1,7 @@
 #!/bin/bash
 # Extract CVC5 build artifacts preserving build directory structure
 # This script extracts everything directly to build/ preserving paths
+# Note: Source .cpp files are NOT extracted - they're available from CVC5 checkout
 #
 # Usage: ./extract_build_artifacts.sh <artifact_file> <build_dir> [extract_headers]
 # Example: ./extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
@@ -89,21 +90,10 @@ if [ "$GCNO_COUNT" -gt 0 ]; then
     echo "✓ Extracted $GCNO_COUNT .gcno files"
 fi
 
-# Extract source .cpp files (preserving structure)
-CPP_COUNT=0
-if [ -d "$TMP_DIR/src" ]; then
-    find "$TMP_DIR/src" -type f -name "*.cpp" 2>/dev/null | while read -r cpp_file; do
-        rel_path="${cpp_file#$TMP_DIR/}"
-        target_path="$BUILD_DIR/$rel_path"
-        mkdir -p "$(dirname "$target_path")"
-        cp "$cpp_file" "$target_path"
-    done 2>/dev/null || true
-    
-    CPP_COUNT=$(find "$BUILD_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
-    if [ "$CPP_COUNT" -gt 0 ]; then
-        echo "✓ Extracted $CPP_COUNT .cpp source files"
-    fi
-fi
+# Note: We do NOT extract source .cpp files because:
+# 1. .gcno files contain absolute paths pointing to cvc5/src/... (source directory)
+# 2. Source files are already available from the CVC5 checkout in coverage workflow
+# 3. fastcov will find source files at their absolute paths from .gcno files
 
 # Extract headers if requested
 if [ "$EXTRACT_HEADERS" = "true" ]; then

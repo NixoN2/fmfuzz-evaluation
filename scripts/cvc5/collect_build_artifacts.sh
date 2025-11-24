@@ -1,8 +1,9 @@
 #!/bin/bash
 # Collect CVC5 build artifacts preserving build directory structure
 # This script collects everything needed for coverage analysis:
-# - Headers, source files, binary, CMake files, .gcno files
+# - Headers, binary, CMake files, .gcno files
 # - All files preserve their relative paths from build/
+# Note: Source .cpp files are NOT collected - they're available from CVC5 checkout
 #
 # Usage: ./collect_build_artifacts.sh <build_dir> <output_dir>
 # Example: ./collect_build_artifacts.sh cvc5/build artifacts
@@ -89,27 +90,10 @@ if [ "$GCNO_COUNT" -gt 0 ]; then
     echo "   ✓ Collected $GCNO_COUNT .gcno files"
 fi
 
-# Collect source .cpp files from source directory (../src relative to build)
-# These need to be placed in build/src/ structure for fastcov
-CPP_COUNT=0
-SRC_DIR="$BUILD_DIR/../src"
-if [ -d "$SRC_DIR" ]; then
-    find "$SRC_DIR" -type f -name "*.cpp" 2>/dev/null | while read -r cpp_file; do
-        # Get relative path from src/ directory
-        rel_path="${cpp_file#$SRC_DIR/}"
-        # Place in output as src/... (matching build structure)
-        target_path="$OUTPUT_DIR/src/$rel_path"
-        mkdir -p "$(dirname "$target_path")"
-        cp "$cpp_file" "$target_path"
-    done 2>/dev/null || true
-    
-    CPP_COUNT=$(find "$OUTPUT_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
-    if [ "$CPP_COUNT" -gt 0 ]; then
-        echo "   ✓ Collected $CPP_COUNT .cpp source files"
-    fi
-else
-    echo "   ⚠ Warning: Source directory not found at $SRC_DIR"
-fi
+# Note: We do NOT collect source .cpp files because:
+# 1. .gcno files contain absolute paths pointing to cvc5/src/... (source directory)
+# 2. Source files are already available from the CVC5 checkout in coverage workflow
+# 3. fastcov will find source files at their absolute paths from .gcno files
 
 # Summary
 echo ""
@@ -118,7 +102,6 @@ echo "   All files preserve build directory structure"
 echo ""
 echo "📊 Summary:"
 echo "   Headers: $HEADER_COUNT"
-echo "   Source files (.cpp): $CPP_COUNT"
 echo "   .gcno files: $GCNO_COUNT"
 echo "   CTestTestfile.cmake: $CTEST_COUNT"
 if [ -f "$OUTPUT_DIR/bin/cvc5" ]; then

@@ -99,11 +99,10 @@ jobs:
       
       - name: Build CVC5 coverage binary
         run: |
-          # Configure Clang to use GCC 14.2 coverage format (B42*)
-          # Without -Xclang -coverage-version='B42*', Clang defaults to GCC 4.8 format (408*)
-          # which is incompatible with GCC 14.2's gcov
-          export CXX="clang++ --gcc-toolchain=/usr -Xclang -coverage-version='B42*'"
-          export CC="clang --gcc-toolchain=/usr -Xclang -coverage-version='B42*'"
+          # Use Clang with GCC 14 toolchain for coverage
+          # GCC 14 is installed above to ensure consistent toolchain
+          export CXX="clang++ --gcc-toolchain=/usr"
+          export CC="clang --gcc-toolchain=/usr"
           ./fmfuzz-dev/scripts/cvc5/build.sh --static --coverage
       
       - name: Collect coverage artifacts

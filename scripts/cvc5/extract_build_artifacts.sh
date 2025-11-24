@@ -170,52 +170,78 @@ if [ "$EXTRACT_HEADERS" = "true" ]; then
     fi
 fi
 
-# Copy source files from checked-out cvc5 to build/src/ for fastcov path resolution
+# Copy ALL source files from checked-out cvc5 to build/src/ for fastcov path resolution
 # This ensures files exist at both original paths (cvc5/src/...) and rewritten paths (cvc5/build/src/...)
 # .gcno files contain absolute paths like /path/to/cvc5/src/... but fastcov looks for build/src/...
+# We ALWAYS copy all files (overwriting if needed) to ensure complete coverage
 SRC_BASE="$BUILD_DIR/../src"
 if [ -d "$SRC_BASE" ]; then
-    echo "🔍 Copying source files from checked-out cvc5 to build directory..."
+    echo "🔍 Copying ALL source files from checked-out cvc5 to build directory..."
     
     # Count files before copying
     CHECKOUT_COUNT=$(find "$SRC_BASE" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
     BUILD_COUNT_BEFORE=$(find "$BUILD_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
     
     if [ "$CHECKOUT_COUNT" -gt 0 ]; then
-        # Create temp file list to avoid subshell issues
-        TEMP_FILE_LIST=$(mktemp)
-        find "$SRC_BASE" -type f -name "*.cpp" 2>/dev/null > "$TEMP_FILE_LIST" || true
-        
-        COPIED=0
-        while IFS= read -r cpp_file; do
-            [ -z "$cpp_file" ] && continue
-            rel_path="${cpp_file#$SRC_BASE/}"
-            build_target="$BUILD_DIR/src/$rel_path"
+        # Use rsync for efficient copying, or fall back to find+cp
+        if command -v rsync >/dev/null 2>&1; then
+            echo "   Using rsync to copy all .cpp files..."
+            rsync -a --include='*/' --include='*.cpp' --exclude='*' "$SRC_BASE/" "$BUILD_DIR/src/" 2>/dev/null || {
+                echo "   rsync failed, falling back to find+cp..."
+                # Fallback to find+cp with temp file
+                TEMP_FILE_LIST=$(mktemp)
+                find "$SRC_BASE" -type f -name "*.cpp" 2>/dev/null > "$TEMP_FILE_LIST" || true
+                while IFS= read -r cpp_file; do
+                    [ -z "$cpp_file" ] && continue
+                    rel_path="${cpp_file#$SRC_BASE/}"
+                    build_target="$BUILD_DIR/src/$rel_path"
+                    mkdir -p "$(dirname "$build_target")"
+                    cp "$cpp_file" "$build_target"
+                done < "$TEMP_FILE_LIST"
+                rm -f "$TEMP_FILE_LIST"
+            }
+        else
+            # Fallback: use find+cp with temp file to avoid subshell issues
+            echo "   Using find+cp to copy all .cpp files..."
+            TEMP_FILE_LIST=$(mktemp)
+            find "$SRC_BASE" -type f -name "*.cpp" 2>/dev/null > "$TEMP_FILE_LIST" || true
             
-            # Only copy if file doesn't already exist in build (from artifacts)
-            if [ ! -f "$build_target" ]; then
+            COPIED=0
+            while IFS= read -r cpp_file; do
+                [ -z "$cpp_file" ] && continue
+                rel_path="${cpp_file#$SRC_BASE/}"
+                build_target="$BUILD_DIR/src/$rel_path"
                 mkdir -p "$(dirname "$build_target")"
                 cp "$cpp_file" "$build_target"
                 COPIED=$((COPIED + 1))
                 if [ $((COPIED % 100)) -eq 0 ]; then
-                    echo "   ... copied $COPIED files from checkout"
+                    echo "   ... copied $COPIED files"
                 fi
-            fi
-        done < "$TEMP_FILE_LIST"
-        rm -f "$TEMP_FILE_LIST"
+            done < "$TEMP_FILE_LIST"
+            rm -f "$TEMP_FILE_LIST"
+        fi
         
         BUILD_COUNT_AFTER=$(find "$BUILD_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
         
-        if [ "$COPIED" -gt 0 ]; then
-            echo "✓ Copied $COPIED .cpp files from checkout to build/src/"
-        fi
+        echo "✓ Ensured all .cpp files are in build/src/"
         echo "   Total .cpp files in build/src/: $BUILD_COUNT_AFTER (was $BUILD_COUNT_BEFORE, checkout has $CHECKOUT_COUNT)"
+        
+        if [ "$BUILD_COUNT_AFTER" -lt "$CHECKOUT_COUNT" ]; then
+            echo "   ⚠ Warning: Fewer files in build/src/ than in checkout (expected $CHECKOUT_COUNT, got $BUILD_COUNT_AFTER)"
+        fi
     else
         echo "⚠ Warning: No .cpp files found in checked-out source at $SRC_BASE"
     fi
 else
     echo "⚠ Warning: Checked-out source directory not found at $SRC_BASE"
     echo "   Source files may not be available at original paths for fastcov"
+    echo "   Expected path: $SRC_BASE"
+    echo "   Build directory: $BUILD_DIR"
+    echo "   Parent of build: $(dirname "$BUILD_DIR")"
+    if [ -d "$(dirname "$BUILD_DIR")" ]; then
+        echo "   Contents of parent directory:"
+        ls -la "$(dirname "$BUILD_DIR")" | head -10
+    fi
 fi
 
 # Verify binary

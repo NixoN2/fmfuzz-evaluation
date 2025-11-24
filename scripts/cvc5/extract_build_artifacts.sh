@@ -2,6 +2,7 @@
 # Extract CVC5 build artifacts from artifacts.tar.gz
 # This script extracts:
 # - All header files to build/ with preserved paths
+# - Source files (.cpp) to build/ for fastcov exclusion markers
 # - The CVC5 binary to build/bin/cvc5
 # - compile_commands.json to build/
 # - CMakeCache.txt and CTestTestfile.cmake (needed for ctest)
@@ -82,6 +83,26 @@ if [ "$EXTRACT_HEADERS" = "true" ]; then
     else
         echo "⚠ Warning: headers/ directory not found in artifacts"
     fi
+fi
+
+# Extract source files (.cpp) for fastcov exclusion markers
+echo "🔍 Extracting source files (.cpp) for fastcov exclusion markers..."
+CPP_COUNT=0
+if [ -d "$TMP_DIR/sources" ]; then
+    find "$TMP_DIR/sources" -type f -name "*.cpp" | while read -r cpp_file; do
+        rel_path="${cpp_file#$TMP_DIR/sources/}"
+        target_path="$BUILD_DIR/$rel_path"
+        mkdir -p "$(dirname "$target_path")"
+        cp "$cpp_file" "$target_path"
+    done
+    CPP_COUNT=$(find "$BUILD_DIR" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
+    if [ "$CPP_COUNT" -gt 0 ]; then
+        echo "✓ Extracted $CPP_COUNT .cpp source files"
+    else
+        echo "⚠ Warning: No .cpp source files found in artifacts"
+    fi
+else
+    echo "⚠ Warning: sources/ directory not found in artifacts"
 fi
 
 # Extract CMake configuration files (needed for ctest)

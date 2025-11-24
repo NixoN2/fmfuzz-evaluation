@@ -100,6 +100,27 @@ else
     echo "   ⚠ Warning: compile_commands.json not found at $BUILD_DIR/compile_commands.json"
 fi
 
+# Collect source files (.cpp) for fastcov exclusion markers
+echo "🔍 Collecting source files (.cpp) for fastcov exclusion markers..."
+CPP_COUNT=0
+if [ -d "$BUILD_DIR/../src" ]; then
+    # Collect .cpp files from source directory (parent of build)
+    find "$BUILD_DIR/../src" -type f -name "*.cpp" | while read -r cpp_file; do
+        rel_path="${cpp_file#$BUILD_DIR/../}"
+        target_path="$OUTPUT_DIR/sources/$rel_path"
+        mkdir -p "$(dirname "$target_path")"
+        cp "$cpp_file" "$target_path"
+    done
+    CPP_COUNT=$(find "$OUTPUT_DIR/sources" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
+    if [ "$CPP_COUNT" -gt 0 ]; then
+        echo "   ✓ Collected $CPP_COUNT .cpp source files"
+    else
+        echo "   ⚠ Warning: No .cpp source files found"
+    fi
+else
+    echo "   ⚠ Warning: Source directory not found at $BUILD_DIR/../src"
+fi
+
 # Collect CMake configuration files (needed for ctest)
 echo "🔍 Collecting CMake configuration files..."
 if [ -f "$BUILD_DIR/CMakeCache.txt" ]; then
@@ -147,6 +168,9 @@ fi
 echo ""
 echo "✅ Artifact collection complete!"
 echo "   Headers: $OUTPUT_DIR/headers/"
+if [ "$CPP_COUNT" -gt 0 ]; then
+    echo "   Source files (.cpp): $CPP_COUNT files"
+fi
 echo "   Binary: $OUTPUT_DIR/bin/cvc5"
 echo "   Compile commands: $OUTPUT_DIR/compile_commands.json"
 if [ -f "$OUTPUT_DIR/CMakeCache.txt" ]; then
@@ -175,6 +199,11 @@ if [ -f "$OUTPUT_DIR/CMakeCache.txt" ]; then
     echo "   CMakeCache.txt: ✓"
 else
     echo "   CMakeCache.txt: ✗"
+fi
+if [ "$CPP_COUNT" -gt 0 ]; then
+    echo "   Source files (.cpp): ✓ ($CPP_COUNT files)"
+else
+    echo "   Source files (.cpp): ✗"
 fi
 if [ "$CTEST_COUNT" -gt 0 ]; then
     echo "   CTestTestfile.cmake: ✓ ($CTEST_COUNT files)"

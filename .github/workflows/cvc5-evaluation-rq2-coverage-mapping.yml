@@ -131,6 +131,7 @@ jobs:
           mkdir -p cvc5/build
           ./scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
           # CMakeCache.txt and CTestTestfile.cmake are now included in artifacts
+          # Source .cpp files are also included for fastcov exclusion markers
           # No need to reconfigure CMake - ctest will work with extracted files
       
       - name: Set up Python

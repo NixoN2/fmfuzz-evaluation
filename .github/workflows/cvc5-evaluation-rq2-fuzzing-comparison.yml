@@ -57,13 +57,15 @@ jobs:
           commit_count=$(echo "$commits" | wc -l)
           echo "✅ Found $commit_count commits with both baseline and variant1 statistics"
           
-          # Generate matrix
-          matrix_entries="[]"
+          # Generate matrix - build JSON array directly
+          echo "[]" > /tmp/matrix_entries.json
           for commit in $commits; do
-            matrix_entries=$(echo "$matrix_entries" | jq --arg commit "$commit" '. + [{"commit": $commit}]')
+            jq --arg commit "$commit" '. + [{"commit": $commit}]' /tmp/matrix_entries.json > /tmp/matrix_entries_new.json
+            mv /tmp/matrix_entries_new.json /tmp/matrix_entries.json
           done
           
-          COMMIT_MATRIX=$(echo "{}" | jq --argjson include "$matrix_entries" '.include = $include')
+          # Create final matrix structure in compact format
+          COMMIT_MATRIX=$(jq -c '{include: .}' /tmp/matrix_entries.json)
           echo "commit_matrix=$COMMIT_MATRIX" >> $GITHUB_OUTPUT
           echo "total_commits=$commit_count" >> $GITHUB_OUTPUT
 

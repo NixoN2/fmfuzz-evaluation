@@ -860,6 +860,7 @@ def analyze_fuzzing_coverage(
             "--changed-functions", str(changed_functions),
             "--fastcov-json", str(fastcov_path),
             "--output", str(output_statistics),
+            "--debug",  # Enable debug output to diagnose matching issues
         ]
         if job_id:
             cmd.extend(["--job-id", job_id])

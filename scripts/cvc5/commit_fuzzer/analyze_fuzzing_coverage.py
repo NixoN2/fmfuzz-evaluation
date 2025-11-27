@@ -73,57 +73,98 @@ def parse_changed_function(function_id: str) -> tuple[str, str, int]:
 
 
 def find_function_in_fastcov(fastcov_data: Dict, file_path: str, 
-                            signature: str, line_num: int) -> Optional[int]:
+                            signature: str, line_num: int, debug: bool = False) -> Optional[int]:
     """Find function in fastcov JSON and return execution count.
     
     Returns execution_count if found, None if not found.
     """
+    if debug:
+        print(f"  [DEBUG] Looking for function: {signature}")
+        print(f"  [DEBUG] In file: {file_path}")
+        print(f"  [DEBUG] At line: {line_num}")
+    
     # Fastcov uses 'sources' key, not 'files'
     if 'sources' not in fastcov_data:
+        if debug:
+            print(f"  [DEBUG] ERROR: 'sources' key not found in fastcov data")
+            print(f"  [DEBUG] Available keys: {list(fastcov_data.keys())}")
         return None
     
     # Normalize file path for lookup
     normalized_path = normalize_file_path(file_path)
+    if debug:
+        print(f"  [DEBUG] Normalized path: {normalized_path}")
     
     # Try exact match first
     file_data = fastcov_data['sources'].get(normalized_path)
     if not file_data:
         # Try with absolute path
         file_data = fastcov_data['sources'].get(file_path)
+        if debug and not file_data:
+            print(f"  [DEBUG] File not found with normalized or original path")
+            print(f"  [DEBUG] Available files (first 10): {list(fastcov_data['sources'].keys())[:10]}")
+            # Try to find similar paths
+            matching_files = [f for f in fastcov_data['sources'].keys() if file_path.split('/')[-1] in f]
+            if matching_files:
+                print(f"  [DEBUG] Files with matching basename: {matching_files[:5]}")
     
     if not file_data:
         return None
     
+    if debug:
+        print(f"  [DEBUG] Found file data, keys: {list(file_data.keys())}")
+    
     # Functions are stored under '' key in file_data
     if '' not in file_data or 'functions' not in file_data['']:
+        if debug:
+            print(f"  [DEBUG] No functions found in file data")
+            if '' in file_data:
+                print(f"  [DEBUG] Empty key exists but no 'functions': {list(file_data[''].keys())}")
         return None
     
     functions = file_data['']['functions']
+    if debug:
+        print(f"  [DEBUG] Found {len(functions)} functions in file")
+        print(f"  [DEBUG] Function names (first 5): {list(functions.keys())[:5]}")
     
     # Try to match by signature
     # Fastcov stores functions with mangled names, so we need to demangle
+    sig_base = signature.split(':')[0] if ':' in signature else signature
+    sig_normalized = ' '.join(sig_base.split())
+    
+    if debug:
+        print(f"  [DEBUG] Looking for signature: {sig_base}")
+        print(f"  [DEBUG] Normalized signature: {sig_normalized}")
+    
     for mangled_name, func_data in functions.items():
         demangled = demangle_function_name(mangled_name)
-        
-        # Match signature (may need normalization)
-        # Remove line number from signature for matching
-        sig_base = signature.split(':')[0] if ':' in signature else signature
         demangled_base = demangled.split(':')[0] if ':' in demangled else demangled
+        demangled_normalized = ' '.join(demangled_base.split())
+        
+        if debug and len(functions) <= 10:  # Only print all if few functions
+            print(f"  [DEBUG]   Comparing with: {demangled_base[:80]}...")
         
         # Try exact match first
         if sig_base == demangled_base:
-            return func_data.get('execution_count', 0)
+            exec_count = func_data.get('execution_count', 0)
+            if debug:
+                print(f"  [DEBUG] ✓ EXACT MATCH! Execution count: {exec_count}")
+            return exec_count
         
         # Try normalized match (remove whitespace differences)
-        sig_normalized = ' '.join(sig_base.split())
-        demangled_normalized = ' '.join(demangled_base.split())
         if sig_normalized == demangled_normalized:
-            return func_data.get('execution_count', 0)
+            exec_count = func_data.get('execution_count', 0)
+            if debug:
+                print(f"  [DEBUG] ✓ NORMALIZED MATCH! Execution count: {exec_count}")
+            return exec_count
+    
+    if debug:
+        print(f"  [DEBUG] ✗ No match found")
     
     return None
 
 
-def analyze_coverage(changed_functions_file: Path, fastcov_json_file: Path) -> Dict:
+def analyze_coverage(changed_functions_file: Path, fastcov_json_file: Path, debug: bool = False) -> Dict:
     """Analyze coverage and return statistics"""
     # Load changed functions
     with open(changed_functions_file, 'r') as f:
@@ -138,16 +179,33 @@ def analyze_coverage(changed_functions_file: Path, fastcov_json_file: Path) -> D
         print(f"Error: Unexpected format in changed_functions file", file=sys.stderr)
         sys.exit(1)
     
+    if debug:
+        print(f"[DEBUG] Loaded {len(changed_functions)} changed functions")
+        print(f"[DEBUG] Changed functions:")
+        for func_id in changed_functions[:5]:
+            print(f"  - {func_id}")
+        if len(changed_functions) > 5:
+            print(f"  ... and {len(changed_functions) - 5} more")
+    
     # Load fastcov JSON
     with open(fastcov_json_file, 'r') as f:
         fastcov_data = json.load(f)
     
+    if debug:
+        print(f"[DEBUG] Loaded fastcov data")
+        if 'sources' in fastcov_data:
+            print(f"[DEBUG] Found {len(fastcov_data['sources'])} source files in fastcov")
+            print(f"[DEBUG] Sample files (first 5): {list(fastcov_data['sources'].keys())[:5]}")
+    
     # Analyze each function
     function_stats = []
-    for func_id in changed_functions:
+    for i, func_id in enumerate(changed_functions):
+        if debug:
+            print(f"\n[DEBUG] Analyzing function {i+1}/{len(changed_functions)}: {func_id}")
+        
         file_path, signature, line_num = parse_changed_function(func_id)
         
-        execution_count = find_function_in_fastcov(fastcov_data, file_path, signature, line_num)
+        execution_count = find_function_in_fastcov(fastcov_data, file_path, signature, line_num, debug=debug)
         
         if execution_count is None:
             execution_count = 0
@@ -195,11 +253,16 @@ def main():
         type=str,
         help='Commit hash for statistics output'
     )
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug output'
+    )
     
     args = parser.parse_args()
     
     # Analyze coverage
-    stats = analyze_coverage(args.changed_functions, args.fastcov_json)
+    stats = analyze_coverage(args.changed_functions, args.fastcov_json, debug=args.debug)
     
     # Add metadata
     if args.job_id:

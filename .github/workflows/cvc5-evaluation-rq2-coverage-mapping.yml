@@ -2,11 +2,6 @@ name: CVC5 RQ2 Coverage Mapping (Variant 1)
 
 on:
   workflow_dispatch:
-    inputs:
-      max_commits:
-        description: 'Maximum number of commits to process (for testing, leave empty for all)'
-        required: false
-        type: string
 
 jobs:
   generate-matrix:
@@ -60,12 +55,7 @@ jobs:
           AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          MAX_COMMITS="${{ inputs.max_commits }}"
-          if [ -n "$MAX_COMMITS" ] && [ "$MAX_COMMITS" != "" ]; then
-            RESULT=$(python3 scripts/rq2/generate_coverage_matrix.py cvc5 "$MAX_COMMITS")
-          else
-            RESULT=$(python3 scripts/rq2/generate_coverage_matrix.py cvc5)
-          fi
+          RESULT=$(python3 scripts/rq2/generate_coverage_matrix.py cvc5)
           
           MATRIX=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(json.dumps({'include': data['include']}, separators=(',', ':')))")
           TOTAL_COMMITS=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['total_commits'])")

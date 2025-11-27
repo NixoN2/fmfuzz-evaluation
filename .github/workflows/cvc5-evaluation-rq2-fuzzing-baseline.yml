@@ -1,4 +1,4 @@
-name: CVC5 RQ2 Fuzzing with Coverage Tracking
+name: CVC5 RQ2 Baseline Fuzzing with Coverage Tracking
 
 on:
   workflow_dispatch:
@@ -38,113 +38,60 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       
-      - name: Generate commit matrix from coverage mappings
+      - name: Generate commit matrix from variant1 statistics
         id: generate-matrix
         env:
           AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          RESULT=$(python3 scripts/rq2/generate_fuzzing_matrix.py cvc5)
+          # List commits that have variant1 statistics
+          prefix="evaluation/rq2/cvc5/fuzzing-statistics/variant1/"
+          commits=$(aws s3 ls s3://${{ secrets.AWS_S3_BUCKET }}/$prefix --recursive | \
+            grep "fuzzing_statistics-" | \
+            sed 's/.*fuzzing_statistics-\(.*\)\.json\.gz/\1/' | \
+            sort -u)
           
-          COMMIT_MATRIX=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(json.dumps({'include': data['include']}, separators=(',', ':')))")
-          TOTAL_COMMITS=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['total_commits'])")
+          commit_count=$(echo "$commits" | wc -l)
+          echo "✅ Found $commit_count commits with variant1 statistics"
           
+          # Generate matrix
+          matrix_entries="[]"
+          for commit in $commits; do
+            matrix_entries=$(echo "$matrix_entries" | jq --arg commit "$commit" '. + [{"commit": $commit}]')
+          done
+          
+          COMMIT_MATRIX=$(echo "{}" | jq --argjson include "$matrix_entries" '.include = $include')
           echo "commit_matrix=$COMMIT_MATRIX" >> $GITHUB_OUTPUT
-          echo "total_commits=$TOTAL_COMMITS" >> $GITHUB_OUTPUT
-          
-          echo "✅ Generated matrix: $TOTAL_COMMITS commits"
+          echo "total_commits=$commit_count" >> $GITHUB_OUTPUT
 
-  prepare-commit-fuzzer:
+  prepare-baseline:
     needs: generate-matrix
     if: needs.generate-matrix.outputs.total_commits != '' && needs.generate-matrix.outputs.total_commits != '0'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.generate-matrix.outputs.commit_matrix) }}
-    outputs:
-      commit_hash: ${{ steps.get-commit.outputs.commit_hash }}
-      changed_functions_file: ${{ steps.prepare.outputs.changed_functions_file }}
-      combined_matrix: ${{ steps.prepare.outputs.combined_matrix }}
-      total_tests: ${{ steps.prepare.outputs.total_tests }}
     
     steps:
       - name: Checkout
         uses: actions/checkout@v5
       
-      - name: Install LLVM/Clang 17
-        uses: KyleMayes/install-llvm-action@v2
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          version: '17'
-
-      - name: Add LLVM to PATH
-        run: echo "${{ env.LLVM_PATH }}/bin" >> $GITHUB_PATH
-
-      - name: Export LIBCLANG_PATH
-        run: echo "LIBCLANG_PATH=${{ env.LLVM_PATH }}/lib" >> $GITHUB_ENV
-
-      - name: Install system development packages
+          python-version: '3.12'
+      
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            libc6-dev \
-            gcc \
-            g++ \
-            binutils \
-            libstdc++-14-dev \
-            libc++-dev \
-            libc++abi-dev \
-            zlib1g \
-            zlib1g-dev
-
-      - name: Install Python dependencies
-        run: |
-          pip install gitpython unidiff "libclang==17.0.6"
-
-      - name: Clone CVC5 repository
-        run: |
-          if [ -d "cvc5" ]; then
-            echo "CVC5 directory already exists, skipping clone"
-          else
-            git clone https://github.com/cvc5/cvc5.git cvc5
-          fi
-
-      - name: Checkout specific commit
-        working-directory: cvc5
-        run: |
-          COMMIT_HASH="${{ matrix.commit }}"
-          echo "🔨 Checking out commit: $COMMIT_HASH"
-          git fetch origin
-          git checkout $COMMIT_HASH
-          echo "Checked out commit: $(git rev-parse HEAD)"
-
-      - name: Get CVC5 commit hash
-        id: get-commit
-        working-directory: cvc5
-        run: |
-          COMMIT_HASH=$(git rev-parse HEAD)
-          echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
-          echo "CVC5 commit hash: $COMMIT_HASH"
-
+          pip install boto3
+      
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5.1.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Download coverage map from S3
-        run: |
-          COMMIT_HASH="${{ matrix.commit }}"
-          S3_KEY="evaluation/rq2/cvc5/coverage-mappings/variant1/coverage_mapping-${COMMIT_HASH}.json.gz"
-          
-          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY coverage_mapping.json.gz
-          echo "✅ Downloaded coverage mapping for $COMMIT_HASH"
       
-      - name: Extract coverage map
-        run: |
-          gunzip coverage_mapping.json.gz
-
       - name: Download coverage binary from S3
         run: |
           COMMIT_HASH="${{ matrix.commit }}"
@@ -153,50 +100,54 @@ jobs:
           mkdir -p artifacts
           aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY artifacts/artifacts.tar.gz
           echo "✅ Downloaded coverage binary for $COMMIT_HASH"
-
-      - name: Extract coverage binary with headers
+      
+      - name: Extract coverage binary
         run: |
           mkdir -p cvc5/build
           ./scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
-
-      - name: Run prepare commit fuzzer
-        id: prepare
-        working-directory: cvc5
+      
+      - name: Read changed functions from variant1 statistics
+        id: read-functions
         env:
-          SKIP_COVERAGE_ENFORCEMENT: "true"
-          MAX_JOBS: 4
+          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          python3 ${{ github.workspace }}/scripts/cvc5/commit_fuzzer/prepare_commit_fuzzer.py \
-            ${{ steps.get-commit.outputs.commit_hash }} \
-            --coverage-json ../coverage_mapping.json \
-            --compile-commands build \
-            --output-matrix ../fuzzer_matrix.json \
-            --output-changed-functions ../changed_functions.json \
-            --max-jobs 4
+          COMMIT_HASH="${{ matrix.commit }}"
+          python3 scripts/rq2/read_changed_functions_from_statistics.py cvc5 "$COMMIT_HASH" > changed_functions_data.json
           
-          echo "changed_functions_file=changed_functions.json" >> $GITHUB_OUTPUT
+          # Extract function IDs and create proper JSON format (same as prepare_commit_fuzzer)
+          jq '{
+            "commit_hash": .commit_hash,
+            "changed_functions": .changed_functions
+          }' changed_functions_data.json > changed_functions.json
           
-          # Extract matrix and total_tests, and create combined matrix with commit
-          if [ -f "../fuzzer_matrix.json" ]; then
-            TOTAL_TESTS=$(jq -r '.total_tests' ../fuzzer_matrix.json)
-            echo "total_tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
-            
-            # Create combined matrix: commit + fuzzer_job
-            jq -c --arg commit "${{ matrix.commit }}" '{
-              "include": (.matrix.include | map({
-                "commit": $commit,
-                "fuzzer_job": .
-              }))
-            }' ../fuzzer_matrix.json > ../combined_matrix.json
-          else
-            echo "total_tests=0" >> $GITHUB_OUTPUT
-            echo "{\"include\":[]}" > ../combined_matrix.json
-          fi
+          FUNCTION_COUNT=$(jq -r '.total_functions' changed_functions_data.json)
+          echo "✅ Read $FUNCTION_COUNT changed functions from variant1 statistics"
+      
+      - name: Shuffle all tests
+        id: pick-tests
+        run: |
+          python3 scripts/rq2/pick_random_tests.py \
+            --build-dir cvc5/build \
+            --seed 42 \
+            --output fuzzer_matrix.json
+          
+          TOTAL_TESTS=$(jq -r '.total_tests' fuzzer_matrix.json)
+          TOTAL_JOBS=$(jq -r '.total_jobs' fuzzer_matrix.json)
+          echo "✅ Generated matrix with $TOTAL_TESTS shuffled tests in $TOTAL_JOBS jobs"
+          
+          # Create combined matrix: commit + fuzzer_job
+          jq -c --arg commit "${{ matrix.commit }}" '{
+            "include": (.matrix.include | map({
+              "commit": $commit,
+              "fuzzer_job": .
+            }))
+          }' fuzzer_matrix.json > combined_matrix.json
       
       - name: Upload changed functions and matrix
         uses: actions/upload-artifact@v4
         with:
-          name: changed-functions-${{ matrix.commit }}
+          name: baseline-changed-functions-${{ matrix.commit }}
           path: |
             changed_functions.json
             fuzzer_matrix.json
@@ -205,12 +156,12 @@ jobs:
       - name: Upload combined matrix
         uses: actions/upload-artifact@v4
         with:
-          name: combined-matrix-${{ matrix.commit }}
+          name: baseline-combined-matrix-${{ matrix.commit }}
           path: combined_matrix.json
           if-no-files-found: ignore
 
   collect-matrices:
-    needs: [generate-matrix, prepare-commit-fuzzer]
+    needs: [generate-matrix, prepare-baseline]
     if: always()
     runs-on: ubuntu-latest
     outputs:
@@ -224,23 +175,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: matrices
-          pattern: combined-matrix-*
+          pattern: baseline-combined-matrix-*
           merge-multiple: false
       
       - name: Merge all matrices
         id: merge-matrices
         run: |
-          # Collect all matrix entries using temporary file to avoid "Argument list too long"
           echo "[]" > /tmp/all_entries.json
-          for matrix_file in matrices/combined-matrix-*/combined_matrix.json; do
+          for matrix_file in matrices/baseline-combined-matrix-*/combined_matrix.json; do
             if [ -f "$matrix_file" ]; then
-              # Merge arrays: current entries + new entries from this file
               jq -s '.[0] + (.[1].include // [])' /tmp/all_entries.json "$matrix_file" > /tmp/all_entries_new.json
               mv /tmp/all_entries_new.json /tmp/all_entries.json
             fi
           done
           
-          # Create final matrix structure
           jq -c '{include: .}' /tmp/all_entries.json > /tmp/fuzzing_matrix.json
           FUZZING_MATRIX=$(cat /tmp/fuzzing_matrix.json)
           echo "fuzzing_matrix=$FUZZING_MATRIX" >> $GITHUB_OUTPUT
@@ -249,13 +197,13 @@ jobs:
           echo "✅ Merged matrices: $COUNT total fuzzing jobs"
 
   fuzzing-jobs:
-    needs: [generate-matrix, prepare-commit-fuzzer, collect-matrices]
+    needs: [generate-matrix, prepare-baseline, collect-matrices]
     if: needs.collect-matrices.outputs.fuzzing_matrix != '' && needs.collect-matrices.outputs.fuzzing_matrix != '{"include":[]}'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.collect-matrices.outputs.fuzzing_matrix) }}
-    timeout-minutes: 75  # 60 minutes fuzzing + 15 minutes buffer
+    timeout-minutes: 75
     
     steps:
       - name: Checkout
@@ -269,10 +217,10 @@ jobs:
             python3-pip \
             unzip \
             wget \
-            binutils  # for c++filt
+            binutils
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
-
+      
       - name: Install fuzzing dependencies
         run: |
           pip install antlr4-python3-runtime==4.9.2
@@ -284,7 +232,7 @@ jobs:
           pip install -e .
           cd ..
           pip cache purge || true
-
+      
       - name: Clone CVC5 repository
         run: |
           if [ -d "cvc5" ]; then
@@ -292,7 +240,7 @@ jobs:
           else
             git clone https://github.com/cvc5/cvc5.git cvc5
           fi
-
+      
       - name: Checkout same commit
         working-directory: cvc5
         run: |
@@ -304,14 +252,14 @@ jobs:
         run: |
           rm -rf cvc5/.git yinyang/.git || true
           echo "✅ Cleaned up git repositories"
-
+      
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5.1.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-
+      
       - name: Download coverage binary from S3
         run: |
           S3_KEY="evaluation/rq2/cvc5/builds/coverage/${{ matrix.commit }}.tar.gz"
@@ -319,22 +267,22 @@ jobs:
           mkdir -p artifacts
           aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY artifacts/artifacts.tar.gz
           echo "✅ Downloaded coverage binary for ${{ matrix.commit }}"
-
+      
       - name: Extract coverage binary
         run: |
           ./scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
-
+      
       - name: Download changed functions and matrix
         uses: actions/download-artifact@v4
         with:
-          name: changed-functions-${{ matrix.commit }}
+          name: baseline-changed-functions-${{ matrix.commit }}
           path: .
-
+      
       - name: Verify solver binaries
         run: |
           z3 --version
           cvc5/build/bin/cvc5 --version
-
+      
       - name: Run fuzzing with coverage tracking
         working-directory: cvc5
         run: |
@@ -355,13 +303,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: statistics-commit-${{ matrix.commit }}-job-${{ matrix.fuzzer_job.job_id }}
+          name: baseline-statistics-commit-${{ matrix.commit }}-job-${{ matrix.fuzzer_job.job_id }}
           path: statistics_commit_${{ matrix.commit }}_job_${{ matrix.fuzzer_job.job_id }}.json
           if-no-files-found: ignore
 
   merge-statistics:
-    needs: [generate-matrix, prepare-commit-fuzzer, fuzzing-jobs]
-    if: always() && needs.prepare-commit-fuzzer.result == 'success'
+    needs: [generate-matrix, prepare-baseline, fuzzing-jobs]
+    if: always() && needs.prepare-baseline.result == 'success'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -375,18 +323,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: statistics-artifacts
-          pattern: statistics-commit-${{ matrix.commit }}-job-*
+          pattern: baseline-statistics-commit-${{ matrix.commit }}-job-*
           merge-multiple: false
       
       - name: Download changed functions
         uses: actions/download-artifact@v4
         with:
-          name: changed-functions-${{ matrix.commit }}
+          name: baseline-changed-functions-${{ matrix.commit }}
           path: .
       
       - name: Merge statistics
         run: |
-          # Find all statistics files for this commit
           STATS_FILES=$(find statistics-artifacts -name "statistics_commit_${{ matrix.commit }}_job_*.json" -type f | sort)
           
           if [ -z "$STATS_FILES" ]; then
@@ -394,7 +341,6 @@ jobs:
             exit 0
           fi
           
-          # Merge statistics
           python3 scripts/cvc5/commit_fuzzer/merge_fuzzing_statistics.py \
             $STATS_FILES \
             --output merged_statistics_${{ matrix.commit }}.json \
@@ -407,12 +353,12 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-
+      
       - name: Upload merged statistics to S3
         if: always()
         run: |
           COMMIT_HASH="${{ matrix.commit }}"
-          S3_KEY="evaluation/rq2/cvc5/fuzzing-statistics/variant1/fuzzing_statistics-${COMMIT_HASH}.json.gz"
+          S3_KEY="evaluation/rq2/cvc5/fuzzing-statistics/baseline/fuzzing_statistics-${COMMIT_HASH}.json.gz"
           
           if [ ! -f "merged_statistics_${COMMIT_HASH}.json" ]; then
             echo "⚠️ Merged statistics file not found"
@@ -426,4 +372,5 @@ jobs:
             --key "$S3_KEY" \
             --body merged_statistics_${COMMIT_HASH}.json.gz
           
-          echo "✅ Uploaded fuzzing statistics to S3: $S3_KEY"
+          echo "✅ Uploaded baseline fuzzing statistics to S3: $S3_KEY"
+

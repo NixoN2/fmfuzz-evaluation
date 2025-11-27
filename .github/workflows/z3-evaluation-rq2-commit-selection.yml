@@ -3,10 +3,6 @@ name: Z3 RQ2 Commit Selection
 on:
   workflow_dispatch:
     inputs:
-      max_commits:
-        description: 'Maximum total commits to select (for testing, leave empty for default: 2)'
-        required: false
-        type: string
       small_count:
         description: 'Number of small commits to select (default: 1)'
         required: false
@@ -77,10 +73,6 @@ jobs:
           
           if [ -n "${{ inputs.large_count }}" ] && [ "${{ inputs.large_count }}" != "" ]; then
             CMD="$CMD --large-count ${{ inputs.large_count }}"
-          fi
-          
-          if [ -n "${{ inputs.max_commits }}" ] && [ "${{ inputs.max_commits }}" != "" ]; then
-            CMD="$CMD --max-commits ${{ inputs.max_commits }}"
           fi
           
           eval $CMD

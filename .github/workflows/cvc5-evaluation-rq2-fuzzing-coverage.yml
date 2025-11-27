@@ -239,19 +239,22 @@ jobs:
       - name: Merge all matrices
         id: merge-matrices
         run: |
-          # Collect all matrix entries
-          ALL_ENTRIES="[]"
+          # Collect all matrix entries using temporary file to avoid "Argument list too long"
+          echo "[]" > /tmp/all_entries.json
           for matrix_file in matrices/combined-matrix-*/combined_matrix.json; do
             if [ -f "$matrix_file" ]; then
-              ENTRIES=$(jq -c '.include' "$matrix_file")
-              ALL_ENTRIES=$(echo "$ALL_ENTRIES" | jq -c ". + $ENTRIES")
+              # Merge arrays: current entries + new entries from this file
+              jq -s '.[0] + (.[1].include // [])' /tmp/all_entries.json "$matrix_file" > /tmp/all_entries_new.json
+              mv /tmp/all_entries_new.json /tmp/all_entries.json
             fi
           done
           
-          FUZZING_MATRIX=$(echo "{}" | jq -c --argjson include "$ALL_ENTRIES" '.include = $include')
+          # Create final matrix structure
+          jq -c '{include: .}' /tmp/all_entries.json > /tmp/fuzzing_matrix.json
+          FUZZING_MATRIX=$(cat /tmp/fuzzing_matrix.json)
           echo "fuzzing_matrix=$FUZZING_MATRIX" >> $GITHUB_OUTPUT
           
-          COUNT=$(echo "$ALL_ENTRIES" | jq 'length')
+          COUNT=$(jq 'length' /tmp/all_entries.json)
           echo "✅ Merged matrices: $COUNT total fuzzing jobs"
 
   fuzzing-jobs:

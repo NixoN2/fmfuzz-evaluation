@@ -117,15 +117,28 @@ def find_function_in_fastcov(fastcov_data: Dict, file_path: str,
     # Try exact match first
     file_data = fastcov_data['sources'].get(normalized_path)
     if not file_data:
-        # Try with absolute path
+        # Try with original path
         file_data = fastcov_data['sources'].get(file_path)
-        if debug and not file_data:
+    
+    if not file_data:
+        # Try to find by basename (fastcov uses absolute paths)
+        basename = file_path.split('/')[-1]
+        matching_files = [f for f in fastcov_data['sources'].keys() if f.endswith('/' + basename) or f.endswith('\\' + basename)]
+        if debug:
             print(f"  [DEBUG] File not found with normalized or original path")
             print(f"  [DEBUG] Available files (first 10): {list(fastcov_data['sources'].keys())[:10]}")
-            # Try to find similar paths
-            matching_files = [f for f in fastcov_data['sources'].keys() if file_path.split('/')[-1] in f]
             if matching_files:
                 print(f"  [DEBUG] Files with matching basename: {matching_files[:5]}")
+        
+        if matching_files:
+            # Use the first matching file (prefer paths containing 'src/')
+            preferred = [f for f in matching_files if '/src/' in f or '\\src\\' in f]
+            if preferred:
+                file_data = fastcov_data['sources'].get(preferred[0])
+            else:
+                file_data = fastcov_data['sources'].get(matching_files[0])
+            if debug and file_data:
+                print(f"  [DEBUG] Using file: {preferred[0] if preferred else matching_files[0]}")
     
     if not file_data:
         return None

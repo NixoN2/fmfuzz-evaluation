@@ -143,37 +143,30 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Download coverage map from S3
-        id: download-coverage
         run: |
           COMMIT_HASH="${{ matrix.commit }}"
           S3_KEY="evaluation/rq2/cvc5/coverage-mappings/variant1/coverage_mapping-${COMMIT_HASH}.json.gz"
           
-          echo "🔍 Looking for coverage mapping: $S3_KEY"
-          if aws s3api head-object \
-            --bucket ${{ secrets.AWS_S3_BUCKET }} \
-            --key "$S3_KEY" >/dev/null 2>&1; then
-            echo "📥 Downloading coverage mapping for commit: ${COMMIT_HASH}"
-            aws s3 cp \
-              s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY \
-              coverage_mapping.json.gz
-            echo "coverage_found=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Coverage mapping not found for commit: ${COMMIT_HASH}"
-            echo "coverage_found=false" >> $GITHUB_OUTPUT
-          fi
+          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY coverage_mapping.json.gz
+          echo "✅ Downloaded coverage mapping for $COMMIT_HASH"
       
       - name: Extract coverage map
-        if: steps.download-coverage.outputs.coverage_found == 'true'
         run: |
           gunzip coverage_mapping.json.gz
-          ls -la coverage_mapping.json
-          echo "✅ Coverage mapping extracted successfully"
-      
-      - name: Coverage mapping not found
-        if: steps.download-coverage.outputs.coverage_found != 'true'
+
+      - name: Download coverage binary from S3
         run: |
-          echo "❌ Coverage mapping not found for commit ${{ matrix.commit }}"
-          exit 1
+          COMMIT_HASH="${{ matrix.commit }}"
+          S3_KEY="evaluation/rq2/cvc5/builds/coverage/${COMMIT_HASH}.tar.gz"
+          
+          mkdir -p artifacts
+          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY artifacts/artifacts.tar.gz
+          echo "✅ Downloaded coverage binary for $COMMIT_HASH"
+
+      - name: Extract coverage binary with headers
+        run: |
+          mkdir -p cvc5/build
+          ./scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
 
       - name: Run prepare commit fuzzer
         id: prepare
@@ -326,46 +319,16 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Download coverage binary from S3
-        id: download-coverage-binary
-        continue-on-error: true
         run: |
-          mkdir -p artifacts
           S3_KEY="evaluation/rq2/cvc5/builds/coverage/${{ matrix.commit }}.tar.gz"
           
-          if aws s3api head-object \
-            --bucket ${{ secrets.AWS_S3_BUCKET }} \
-            --key "$S3_KEY" >/dev/null 2>&1; then
-            echo "📥 Downloading coverage binary from S3..."
-            aws s3 cp \
-              s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY \
-              artifacts/artifacts.tar.gz
-            echo "binary_available=true" >> $GITHUB_OUTPUT
-          else
-            echo "WARNING: Coverage binary not found in S3"
-            echo "binary_available=false" >> $GITHUB_OUTPUT
-          fi
+          mkdir -p artifacts
+          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY artifacts/artifacts.tar.gz
+          echo "✅ Downloaded coverage binary for ${{ matrix.commit }}"
 
       - name: Extract coverage binary
-        id: extract-coverage-binary
-        if: steps.download-coverage-binary.outputs.binary_available == 'true'
         run: |
-          if [ -f "artifacts/artifacts.tar.gz" ]; then
-            ./scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
-            if [ -f "cvc5/build/bin/cvc5" ]; then
-              echo "✅ Coverage binary extracted successfully"
-            else
-              echo "⚠️ Binary extraction failed"
-              echo "binary_available=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "binary_available=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Coverage binary not found
-        if: steps.download-coverage-binary.outputs.binary_available != 'true'
-        run: |
-          echo "❌ Coverage binary not found. Please run coverage build workflow first."
-          exit 1
+          ./scripts/cvc5/extract_build_artifacts.sh artifacts/artifacts.tar.gz cvc5/build true
 
       - name: Download changed functions and matrix
         uses: actions/download-artifact@v4

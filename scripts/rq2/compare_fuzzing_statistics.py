@@ -144,8 +144,13 @@ def main():
         print(f"   Baseline triggered: {comparison['summary']['baseline_triggered']}", file=sys.stderr)
         print(f"   Variant1 triggered: {comparison['summary']['variant1_triggered']}", file=sys.stderr)
         print(f"   Both triggered: {comparison['summary']['both_triggered']}", file=sys.stderr)
+        print(f"   Neither triggered: {comparison['summary']['neither_triggered']}", file=sys.stderr)
         print(f"   Baseline better: {comparison['summary']['baseline_better']}", file=sys.stderr)
         print(f"   Variant1 better: {comparison['summary']['variant1_better']}", file=sys.stderr)
+        print(f"   Total baseline executions: {comparison['summary']['total_baseline_executions']:,}", file=sys.stderr)
+        print(f"   Total variant1 executions: {comparison['summary']['total_variant1_executions']:,}", file=sys.stderr)
+        print(f"   Baseline more executions (when both triggered): {comparison['summary']['baseline_more_executions']}", file=sys.stderr)
+        print(f"   Variant1 more executions (when both triggered): {comparison['summary']['variant1_more_executions']}", file=sys.stderr)
     else:
         # Compare all commits
         print("🔍 Comparing all commits...", file=sys.stderr)

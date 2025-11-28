@@ -436,7 +436,7 @@ jobs:
             exit 0
           fi
           
-          gzip -c merged_statistics_${COMMIT_HASH}.json > merged_statistics_${COMMIT_HASH}.json.gz
+          gzip -c "merged_statistics_${{ matrix.commit }}.json" > merged_statistics_${COMMIT_HASH}.json.gz
           
           aws s3api put-object \
             --bucket ${{ secrets.AWS_S3_BUCKET }} \

@@ -83,6 +83,18 @@ jobs:
       - name: Add LLVM to PATH
         run: echo "${{ env.LLVM_PATH }}/bin" >> $GITHUB_PATH
       
+      - name: Install GCC 14 (for consistent toolchain)
+        run: |
+          # Install GCC 14 to ensure consistent toolchain version
+          # This ensures coverage format compatibility (gcov-14 can read GCC 14 coverage data)
+          sudo apt-get update
+          sudo apt-get install -y gcc-14 g++-14 libstdc++-14-dev
+          # Set GCC 14 as default
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 60
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 60
+          sudo update-alternatives --set gcc /usr/bin/gcc-14
+          sudo update-alternatives --set g++ /usr/bin/g++-14
+      
       - name: Clean build for coverage
         run: |
           if [ -d "z3/build" ]; then
@@ -91,13 +103,33 @@ jobs:
       
       - name: Build Z3 coverage binary
         run: |
-          export CXX="clang++ --gcc-toolchain=/usr"
-          export CC="clang --gcc-toolchain=/usr"
+          # Use GCC 14 directly for compilation to ensure coverage format matches
+          # This ensures 'B42*' format that gcov-14 can read
+          export CXX="g++-14"
+          export CC="gcc-14"
           ./fmfuzz-dev/scripts/z3/build.sh --static --coverage
       
       - name: Collect coverage artifacts
         run: |
-          ./fmfuzz-dev/scripts/z3/collect_build_artifacts.sh z3/build .artifacts-coverage
+          ./scripts/z3/collect_build_artifacts.sh z3/build .artifacts-coverage
+      
+      - name: Show build directory structure
+        run: |
+          echo "=== Full build directory structure ==="
+          echo "Build directory: z3/build"
+          echo ""
+          if [ -d "z3/build" ]; then
+            echo "Directory tree:"
+            find z3/build -type f -o -type d | sort | sed 's|^z3/build/||' | sed 's|^|  |'
+            echo ""
+            echo "File count by type:"
+            echo "  .cpp files: $(find z3/build -name "*.cpp" -type f 2>/dev/null | wc -l)"
+            echo "  .h files: $(find z3/build -name "*.h" -type f 2>/dev/null | wc -l)"
+            echo "  .gcno files: $(find z3/build -name "*.gcno" -type f 2>/dev/null | wc -l)"
+            echo "  Total files: $(find z3/build -type f 2>/dev/null | wc -l)"
+          else
+            echo "Build directory does not exist"
+          fi
       
       - name: Compress coverage artifacts
         run: |

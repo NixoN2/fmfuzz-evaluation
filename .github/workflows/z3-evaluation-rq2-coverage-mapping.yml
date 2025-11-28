@@ -90,7 +90,25 @@ jobs:
       - name: Extract coverage binary
         run: |
           mkdir -p z3/build
-          ./fmfuzz-dev/scripts/z3/extract_build_artifacts.sh artifacts/artifacts.tar.gz z3/build true
+          ./scripts/z3/extract_build_artifacts.sh artifacts/artifacts.tar.gz z3/build true
+      
+      - name: Show build directory structure
+        run: |
+          echo "=== Full build directory structure ==="
+          echo "Build directory: z3/build"
+          echo ""
+          if [ -d "z3/build" ]; then
+            echo "Directory tree:"
+            find z3/build -type f -o -type d | sort | sed 's|^z3/build/||' | sed 's|^|  |'
+            echo ""
+            echo "File count by type:"
+            echo "  .cpp files: $(find z3/build -name "*.cpp" -type f 2>/dev/null | wc -l)"
+            echo "  .h files: $(find z3/build -name "*.h" -type f 2>/dev/null | wc -l)"
+            echo "  .gcno files: $(find z3/build -name "*.gcno" -type f 2>/dev/null | wc -l)"
+            echo "  Total files: $(find z3/build -type f 2>/dev/null | wc -l)"
+          else
+            echo "Build directory does not exist"
+          fi
       
       - name: Clone z3test repository
         run: |
@@ -109,18 +127,23 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           cvc5 --version
       
-      - name: Install system dependencies for coverage
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc g++ binutils
-      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       
-      - name: Install Python dependencies
+      - name: Install GCC 14 and coverage tools (matching build)
         run: |
+          # Install GCC 14 to match the build workflow
+          # Build workflow sets GCC 14 as default, so we need gcov-14 here
+          sudo apt-get update
+          sudo apt-get install -y gcc-14 g++-14 libstdc++-14-dev binutils
+          # Configure gcov to use GCC 14's version
+          sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-14 60
+          sudo update-alternatives --set gcov /usr/bin/gcov-14
+          # Verify gcov version matches
+          echo "GCC version: $(gcc-14 --version | head -1)"
+          echo "Gcov version: $(gcov-14 --version | head -1)"
           pip install psutil fastcov
       
       - name: Run coverage analysis

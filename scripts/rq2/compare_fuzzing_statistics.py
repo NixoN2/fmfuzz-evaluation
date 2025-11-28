@@ -14,9 +14,9 @@ import argparse
 from botocore.exceptions import ClientError
 from typing import Dict, List, Optional
 
-def download_statistics(s3_client, bucket: str, commit_hash: str, variant: str) -> Optional[Dict]:
+def download_statistics(s3_client, bucket: str, solver: str, commit_hash: str, variant: str) -> Optional[Dict]:
     """Download statistics from S3"""
-    s3_key = f"evaluation/rq2/cvc5/fuzzing-statistics/{variant}/fuzzing_statistics-{commit_hash}.json.gz"
+    s3_key = f"evaluation/rq2/{solver}/fuzzing-statistics/{variant}/fuzzing_statistics-{commit_hash}.json.gz"
     
     try:
         import tempfile
@@ -106,6 +106,7 @@ def compare_statistics(baseline: Dict, variant1: Dict) -> Dict:
 
 def main():
     parser = argparse.ArgumentParser(description='Compare baseline vs variant1 fuzzing statistics')
+    parser.add_argument('--solver', required=True, choices=['cvc5', 'z3'], help='Solver name (cvc5 or z3)')
     parser.add_argument('--commit', required=True, help='Commit hash to compare')
     parser.add_argument('--output', required=True, help='Output JSON file')
     parser.add_argument('--max-commits', type=int, help='Maximum number of commits to process (for testing)')
@@ -122,8 +123,8 @@ def main():
     if args.commit:
         print(f"🔍 Comparing statistics for commit: {args.commit}", file=sys.stderr)
         
-        baseline = download_statistics(s3_client, bucket, args.commit, 'baseline')
-        variant1 = download_statistics(s3_client, bucket, args.commit, 'variant1')
+        baseline = download_statistics(s3_client, bucket, args.solver, args.commit, 'baseline')
+        variant1 = download_statistics(s3_client, bucket, args.solver, args.commit, 'variant1')
         
         if not baseline:
             print(f"❌ Baseline statistics not found for commit {args.commit}", file=sys.stderr)
@@ -156,7 +157,7 @@ def main():
         print("🔍 Comparing all commits...", file=sys.stderr)
         
         # List all commits with variant1 statistics
-        prefix = "evaluation/rq2/cvc5/fuzzing-statistics/variant1/"
+        prefix = f"evaluation/rq2/{args.solver}/fuzzing-statistics/variant1/"
         commits = []
         
         try:
@@ -184,8 +185,8 @@ def main():
         
         all_comparisons = []
         for commit in commits:
-            baseline = download_statistics(s3_client, bucket, commit, 'baseline')
-            variant1 = download_statistics(s3_client, bucket, commit, 'variant1')
+            baseline = download_statistics(s3_client, bucket, args.solver, commit, 'baseline')
+            variant1 = download_statistics(s3_client, bucket, args.solver, commit, 'variant1')
             
             if not baseline or not variant1:
                 print(f"⚠️ Skipping commit {commit} (missing statistics)", file=sys.stderr)

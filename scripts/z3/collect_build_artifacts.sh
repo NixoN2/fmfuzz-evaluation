@@ -1,0 +1,123 @@
+#!/bin/bash
+# Collect Z3 build artifacts preserving build directory structure
+# This script collects everything needed for coverage analysis:
+# - Headers, source .cpp files, binary, CMake files, .gcno files
+# - All files preserve their relative paths from build/
+# Source .cpp files are collected to src/... so fastcov can find them at build/src/...
+#
+# Usage: ./collect_build_artifacts.sh <build_dir> <output_dir>
+# Example: ./collect_build_artifacts.sh z3/build artifacts
+
+set -e
+
+BUILD_DIR="${1:-z3/build}"
+OUTPUT_DIR="${2:-artifacts}"
+
+if [ ! -d "$BUILD_DIR" ]; then
+    echo "Error: Build directory not found: $BUILD_DIR"
+    exit 1
+fi
+
+echo "📦 Collecting build artifacts from $BUILD_DIR"
+echo "   Output directory: $OUTPUT_DIR"
+
+mkdir -p "$OUTPUT_DIR"
+
+# Collect binary (Z3 binary is directly in build directory, not in bin/)
+if [ -f "$BUILD_DIR/z3" ]; then
+    mkdir -p "$OUTPUT_DIR/bin"
+    cp "$BUILD_DIR/z3" "$OUTPUT_DIR/bin/z3"
+    chmod +x "$OUTPUT_DIR/bin/z3"
+    BINARY_SIZE=$(du -h "$OUTPUT_DIR/bin/z3" | cut -f1)
+    echo "   ✓ Binary copied ($BINARY_SIZE)"
+else
+    echo "   ⚠ Warning: Binary not found at $BUILD_DIR/z3"
+fi
+
+# Collect compile_commands.json
+if [ -f "$BUILD_DIR/compile_commands.json" ]; then
+    cp "$BUILD_DIR/compile_commands.json" "$OUTPUT_DIR/compile_commands.json"
+    echo "   ✓ compile_commands.json copied"
+fi
+
+# Collect CMakeCache.txt
+if [ -f "$BUILD_DIR/CMakeCache.txt" ]; then
+    cp "$BUILD_DIR/CMakeCache.txt" "$OUTPUT_DIR/CMakeCache.txt"
+    echo "   ✓ CMakeCache.txt copied"
+fi
+
+# Collect all headers (.h, .hpp, .hxx) preserving structure
+HEADER_COUNT=0
+find "$BUILD_DIR" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) 2>/dev/null | while read -r header; do
+    rel_path="${header#$BUILD_DIR/}"
+    target_path="$OUTPUT_DIR/$rel_path"
+    mkdir -p "$(dirname "$target_path")"
+    cp "$header" "$target_path"
+done 2>/dev/null || true
+
+HEADER_COUNT=$(find "$OUTPUT_DIR" -type f \( -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) 2>/dev/null | wc -l || echo "0")
+if [ "$HEADER_COUNT" -gt 0 ]; then
+    echo "   ✓ Collected $HEADER_COUNT header files"
+fi
+
+# Collect all .gcno files (coverage notes) preserving structure
+GCNO_COUNT=0
+find "$BUILD_DIR" -name "*.gcno" -type f 2>/dev/null | while read -r gcno_file; do
+    rel_path="${gcno_file#$BUILD_DIR/}"
+    target_path="$OUTPUT_DIR/$rel_path"
+    mkdir -p "$(dirname "$target_path")"
+    cp "$gcno_file" "$target_path"
+done 2>/dev/null || true
+
+GCNO_COUNT=$(find "$OUTPUT_DIR" -name "*.gcno" -type f 2>/dev/null | wc -l || echo "0")
+if [ "$GCNO_COUNT" -gt 0 ]; then
+    echo "   ✓ Collected $GCNO_COUNT .gcno files"
+fi
+
+# Collect source .cpp files from both checked-out source AND build directory
+# Build directory contains generated files
+# fastcov looks for source files at build/src/... so we place them at src/... in artifacts
+echo "🔍 Collecting source .cpp files..."
+
+# First, collect from checked-out source directory
+SRC_DIR="$BUILD_DIR/../src"
+if [ -d "$SRC_DIR" ]; then
+    find "$SRC_DIR" -type f -name "*.cpp" 2>/dev/null | while read -r cpp_file; do
+        rel_path="${cpp_file#$SRC_DIR/}"
+        target_path="$OUTPUT_DIR/src/$rel_path"
+        mkdir -p "$(dirname "$target_path")"
+        cp "$cpp_file" "$target_path"
+        echo "   [SOURCE] $rel_path"
+    done 2>/dev/null || true
+fi
+
+# Then, collect generated files from build directory (overwrites if needed)
+if [ -d "$BUILD_DIR/src" ]; then
+    find "$BUILD_DIR/src" -type f -name "*.cpp" 2>/dev/null | while read -r cpp_file; do
+        rel_path="${cpp_file#$BUILD_DIR/src/}"
+        target_path="$OUTPUT_DIR/src/$rel_path"
+        mkdir -p "$(dirname "$target_path")"
+        cp "$cpp_file" "$target_path"
+        echo "   [GENERATED] $rel_path"
+    done 2>/dev/null || true
+fi
+
+CPP_COUNT=$(find "$OUTPUT_DIR/src" -name "*.cpp" -type f 2>/dev/null | wc -l || echo "0")
+if [ "$CPP_COUNT" -gt 0 ]; then
+    echo "   ✓ Collected $CPP_COUNT .cpp source files"
+    echo ""
+    echo "📋 Full list of collected .cpp files:"
+    find "$OUTPUT_DIR/src" -name "*.cpp" -type f 2>/dev/null | sort | sed 's|^'"$OUTPUT_DIR/src/"'||' | sed 's/^/      /'
+fi
+
+echo ""
+echo "✅ Artifact collection complete!"
+echo ""
+echo "📊 Collection summary:"
+echo "   Binary: $([ -f "$OUTPUT_DIR/bin/z3" ] && echo "✓" || echo "✗")"
+echo "   Headers: $HEADER_COUNT"
+echo "   Source files (.cpp): $CPP_COUNT"
+echo "   .gcno files: $GCNO_COUNT"
+echo "   compile_commands.json: $([ -f "$OUTPUT_DIR/compile_commands.json" ] && echo "✓" || echo "✗")"
+echo "   CMakeCache.txt: $([ -f "$OUTPUT_DIR/CMakeCache.txt" ] && echo "✓" || echo "✗")"
+

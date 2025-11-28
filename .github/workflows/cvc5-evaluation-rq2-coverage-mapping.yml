@@ -91,9 +91,25 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       
+      - name: Get full commit hash
+        id: get-commit
+        run: |
+          # Expand short hash to full hash if needed
+          if [ -d "cvc5" ]; then
+            cd cvc5
+            git fetch origin --quiet 2>/dev/null || true
+            FULL_HASH=$(git rev-parse "${{ matrix.commit }}")
+            echo "commit_hash=$FULL_HASH" >> $GITHUB_OUTPUT
+            echo "Expanded ${{ matrix.commit }} to $FULL_HASH"
+          else
+            # Fallback: use matrix.commit as-is
+            echo "commit_hash=${{ matrix.commit }}" >> $GITHUB_OUTPUT
+            echo "Using ${{ matrix.commit }} as-is (repo not available)"
+          fi
+      
       - name: Download coverage binary
         run: |
-          COMMIT_HASH="${{ matrix.commit }}"
+          COMMIT_HASH="${{ steps.get-commit.outputs.commit_hash }}"
           S3_KEY="evaluation/rq2/cvc5/builds/coverage/${COMMIT_HASH}.tar.gz"
           
           mkdir -p artifacts
@@ -104,7 +120,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: cvc5/cvc5
-          ref: ${{ matrix.commit }}
+          ref: ${{ steps.get-commit.outputs.commit_hash }}
           path: cvc5
           fetch-depth: 0
       
@@ -514,9 +530,25 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       
+      - name: Get full commit hash
+        id: get-commit
+        run: |
+          # Expand short hash to full hash if needed
+          if [ -d "cvc5" ]; then
+            cd cvc5
+            git fetch origin --quiet 2>/dev/null || true
+            FULL_HASH=$(git rev-parse "${{ matrix.commit }}")
+            echo "commit_hash=$FULL_HASH" >> $GITHUB_OUTPUT
+            echo "Expanded ${{ matrix.commit }} to $FULL_HASH"
+          else
+            # Fallback: use matrix.commit as-is
+            echo "commit_hash=${{ matrix.commit }}" >> $GITHUB_OUTPUT
+            echo "Using ${{ matrix.commit }} as-is (repo not available)"
+          fi
+      
       - name: Upload coverage mapping to S3
         run: |
-          COMMIT_HASH="${{ matrix.commit }}"
+          COMMIT_HASH="${{ steps.get-commit.outputs.commit_hash }}"
           S3_KEY="evaluation/rq2/cvc5/coverage-mappings/variant1/coverage_mapping-${COMMIT_HASH}.json.gz"
           
           if [ ! -f "coverage_mapping.json.gz" ]; then

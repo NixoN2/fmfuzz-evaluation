@@ -105,9 +105,25 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       
+      - name: Get full commit hash
+        id: get-commit
+        run: |
+          # Expand short hash to full hash if needed
+          if [ -d "cvc5" ]; then
+            cd cvc5
+            git fetch origin --quiet 2>/dev/null || true
+            FULL_HASH=$(git rev-parse "${{ matrix.commit }}")
+            echo "commit_hash=$FULL_HASH" >> $GITHUB_OUTPUT
+            echo "Expanded ${{ matrix.commit }} to $FULL_HASH"
+          else
+            # Fallback: use matrix.commit as-is
+            echo "commit_hash=${{ matrix.commit }}" >> $GITHUB_OUTPUT
+            echo "Using ${{ matrix.commit }} as-is (repo not available)"
+          fi
+      
       - name: Download coverage binary from S3
         run: |
-          COMMIT_HASH="${{ matrix.commit }}"
+          COMMIT_HASH="${{ steps.get-commit.outputs.commit_hash }}"
           S3_KEY="evaluation/rq2/cvc5/builds/coverage/${COMMIT_HASH}.tar.gz"
           
           mkdir -p artifacts
@@ -125,7 +141,7 @@ jobs:
           AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          COMMIT_HASH="${{ matrix.commit }}"
+          COMMIT_HASH="${{ steps.get-commit.outputs.commit_hash }}"
           python3 scripts/rq2/read_changed_functions_from_statistics.py cvc5 "$COMMIT_HASH" > changed_functions_data.json
           
           # Extract function IDs and create proper JSON format (same as prepare_commit_fuzzer)
@@ -367,13 +383,30 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       
+      - name: Get full commit hash
+        id: get-commit-merge
+        if: always()
+        run: |
+          # Expand short hash to full hash if needed
+          if [ -d "cvc5" ]; then
+            cd cvc5
+            git fetch origin --quiet 2>/dev/null || true
+            FULL_HASH=$(git rev-parse "${{ matrix.commit }}")
+            echo "commit_hash=$FULL_HASH" >> $GITHUB_OUTPUT
+            echo "Expanded ${{ matrix.commit }} to $FULL_HASH"
+          else
+            # Fallback: use matrix.commit as-is
+            echo "commit_hash=${{ matrix.commit }}" >> $GITHUB_OUTPUT
+            echo "Using ${{ matrix.commit }} as-is (repo not available)"
+          fi
+      
       - name: Upload merged statistics to S3
         if: always()
         run: |
-          COMMIT_HASH="${{ matrix.commit }}"
+          COMMIT_HASH="${{ steps.get-commit-merge.outputs.commit_hash }}"
           S3_KEY="evaluation/rq2/cvc5/fuzzing-statistics/baseline/fuzzing_statistics-${COMMIT_HASH}.json.gz"
           
-          if [ ! -f "merged_statistics_${COMMIT_HASH}.json" ]; then
+          if [ ! -f "merged_statistics_${{ matrix.commit }}.json" ]; then
             echo "⚠️ Merged statistics file not found"
             exit 0
           fi

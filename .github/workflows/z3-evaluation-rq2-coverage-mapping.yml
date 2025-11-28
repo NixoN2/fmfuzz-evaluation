@@ -177,7 +177,7 @@ jobs:
           TEST_TIMEOUT: 120
         run: |
           python3 ../../fmfuzz-dev/scripts/z3/coverage/coverage_mapper.py \
-            --build-dir . \
+            --build-dir $(pwd) \
             --z3test-dir ../../z3test \
             --start-index ${{ matrix.chunk.start_index }} \
             --end-index ${{ matrix.chunk.end_index }}

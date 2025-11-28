@@ -78,21 +78,35 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       
-      - name: Checkout exact Z3 commit (for source files and commit hash expansion)
-        uses: actions/checkout@v5
-        with:
-          repository: Z3Prover/z3
-          ref: ${{ matrix.commit }}
-          path: z3
-          fetch-depth: 0
-      
       - name: Get full commit hash
         id: get-commit
         run: |
-          cd z3
-          FULL_HASH=$(git rev-parse HEAD)
-          echo "commit_hash=$FULL_HASH" >> $GITHUB_OUTPUT
-          echo "Expanded ${{ matrix.commit }} to $FULL_HASH"
+          # Expand short hash to full hash if needed
+          if [ -d "z3" ]; then
+            cd z3
+            git fetch origin --quiet 2>/dev/null || true
+            FULL_HASH=$(git rev-parse "${{ matrix.commit }}")
+            echo "commit_hash=$FULL_HASH" >> $GITHUB_OUTPUT
+            echo "Expanded ${{ matrix.commit }} to $FULL_HASH"
+          else
+            # Clone temporarily for commit hash expansion
+            git clone https://github.com/Z3Prover/z3.git z3-tmp
+            cd z3-tmp
+            git fetch origin --quiet 2>/dev/null || true
+            FULL_HASH=$(git rev-parse "${{ matrix.commit }}")
+            echo "commit_hash=$FULL_HASH" >> $GITHUB_OUTPUT
+            echo "Expanded ${{ matrix.commit }} to $FULL_HASH"
+            cd ..
+            rm -rf z3-tmp
+          fi
+      
+      - name: Checkout exact Z3 commit (for source files)
+        uses: actions/checkout@v5
+        with:
+          repository: Z3Prover/z3
+          ref: ${{ steps.get-commit.outputs.commit_hash }}
+          path: z3
+          fetch-depth: 0
       
       - name: Download coverage binary
         run: |

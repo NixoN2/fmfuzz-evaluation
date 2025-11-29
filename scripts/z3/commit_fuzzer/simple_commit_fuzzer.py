@@ -844,6 +844,13 @@ def analyze_fuzzing_coverage(
     
     try:
         print(f"[INFO] Running fastcov on {build_dir}...")
+        print(f"[DEBUG] Working directory: {build_dir.parent}")
+        print(f"[DEBUG] Sample .gcda file paths (first 3):")
+        for gcda in gcda_files[:3]:
+            print(f"[DEBUG]   - {gcda}")
+        
+        # Match cvc5 exactly: run from build_dir.parent with --search-directory as str(build_dir)
+        # This works because both cvc5 and z3 workflows now use working-directory and relative paths
         result = subprocess.run([
             "fastcov", "--gcov", "gcov",
             "--search-directory", str(build_dir),

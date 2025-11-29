@@ -354,6 +354,61 @@ jobs:
           z3/build/z3 --version
           cvc5 --version
 
+      - name: Verify coverage instrumentation
+        run: |
+          echo "=== Checking coverage instrumentation ==="
+          echo "Build directory: z3/build"
+          echo ""
+          
+          # Check for .gcno files
+          GCNO_COUNT=$(find z3/build -name "*.gcno" -type f 2>/dev/null | wc -l || echo "0")
+          echo "Found $GCNO_COUNT .gcno files"
+          if [ "$GCNO_COUNT" -eq 0 ]; then
+            echo "⚠️ WARNING: No .gcno files found - binary may not be instrumented!"
+          else
+            echo "✓ Binary appears to be instrumented"
+            echo "Sample .gcno files:"
+            find z3/build -name "*.gcno" -type f | head -3
+          fi
+          echo ""
+          
+          # Clear any existing .gcda files
+          echo "Clearing existing .gcda files..."
+          find z3/build -name "*.gcda" -type f -delete 2>/dev/null || true
+          echo ""
+          
+          # Run a test to see if .gcda files are generated
+          echo "Running test to generate coverage..."
+          if [ -f "z3test/regressions/smt2/3749.smt2" ]; then
+            timeout 10 z3/build/z3 model_validate=true "z3test/regressions/smt2/3749.smt2" > /dev/null 2>&1 || true
+          else
+            # Try to find any smt2 file
+            TEST_FILE=$(find z3test -name "*.smt2" -type f | head -1)
+            if [ -n "$TEST_FILE" ]; then
+              timeout 10 z3/build/z3 model_validate=true "$TEST_FILE" > /dev/null 2>&1 || true
+            fi
+          fi
+          
+          # Check if .gcda files were created
+          GCDA_COUNT=$(find z3/build -name "*.gcda" -type f 2>/dev/null | wc -l || echo "0")
+          echo "Found $GCDA_COUNT .gcda files after test run"
+          if [ "$GCDA_COUNT" -eq 0 ]; then
+            echo "⚠️ WARNING: No .gcda files generated - coverage may not be working!"
+            echo "This could mean:"
+            echo "  1. Binary is not instrumented (no .gcno files)"
+            echo "  2. Binary is instrumented but .gcda files aren't being written"
+            echo "  3. Wrong binary is being used"
+          else
+            echo "✓ Coverage is working - .gcda files are being generated"
+            echo "Sample .gcda files:"
+            find z3/build -name "*.gcda" -type f | head -3
+          fi
+          echo ""
+          
+          # Clear .gcda files again before fuzzing
+          echo "Clearing .gcda files before fuzzing..."
+          find z3/build -name "*.gcda" -type f -delete 2>/dev/null || true
+
       - name: Run fuzzing with coverage tracking
         run: |
           FUZZING_DURATION="${{ inputs.fuzzing_duration_minutes || 60 }}"

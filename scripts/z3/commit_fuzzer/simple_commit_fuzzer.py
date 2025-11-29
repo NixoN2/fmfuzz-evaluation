@@ -821,6 +821,22 @@ def analyze_fuzzing_coverage(
     """Collect coverage with fastcov and analyze changed functions"""
     import tempfile
     
+    # Debug: Check for .gcda files before running fastcov
+    print(f"[DEBUG] Checking for coverage files in {build_dir}...")
+    gcda_files = list(build_dir.rglob("*.gcda"))
+    gcno_files = list(build_dir.rglob("*.gcno"))
+    print(f"[DEBUG] Found {len(gcda_files)} .gcda files and {len(gcno_files)} .gcno files")
+    if gcda_files:
+        print(f"[DEBUG] Sample .gcda files (first 5):")
+        for gcda in gcda_files[:5]:
+            print(f"[DEBUG]   - {gcda}")
+    else:
+        print(f"[DEBUG] WARNING: No .gcda files found! Coverage data may not be available.")
+        print(f"[DEBUG] This could mean:")
+        print(f"[DEBUG]   1. The binary was not instrumented for coverage")
+        print(f"[DEBUG]   2. The binary was not executed (no coverage data generated)")
+        print(f"[DEBUG]   3. .gcda files are in a different location")
+    
     # Run fastcov to collect coverage
     fastcov_output = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
     fastcov_output.close()
@@ -837,9 +853,61 @@ def analyze_fuzzing_coverage(
             "--jobs", "4"
         ], cwd=build_dir.parent, capture_output=True, text=True, check=False)
         
+        # Debug: Check if fastcov produced a JSON file even if it failed
+        if fastcov_path.exists():
+            file_size = fastcov_path.stat().st_size
+            print(f"[DEBUG] fastcov output file exists: {fastcov_path} (size: {file_size} bytes)")
+            if file_size > 0:
+                try:
+                    with open(fastcov_path, 'r') as f:
+                        fastcov_data = json.load(f)
+                    print(f"[DEBUG] fastcov JSON structure: {list(fastcov_data.keys())}")
+                    if 'sources' in fastcov_data:
+                        print(f"[DEBUG] Found {len(fastcov_data['sources'])} source files in fastcov JSON")
+                except Exception as e:
+                    print(f"[DEBUG] Could not parse fastcov JSON: {e}")
+        else:
+            print(f"[DEBUG] fastcov output file does not exist")
+        
         if result.returncode != 0:
-            print(f"[ERROR] fastcov failed: {result.stderr}", file=sys.stderr)
+            print(f"[ERROR] fastcov failed (exit code {result.returncode})", file=sys.stderr)
+            print(f"[ERROR] fastcov stdout: {result.stdout}", file=sys.stderr)
+            print(f"[ERROR] fastcov stderr: {result.stderr}", file=sys.stderr)
             # Create empty statistics
+            stats = {
+                "functions": []
+            }
+            if job_id:
+                stats['job_id'] = job_id
+            if commit_hash:
+                stats['commit_hash'] = commit_hash
+            with open(output_statistics, 'w') as f:
+                json.dump(stats, f, indent=2)
+            return
+        
+        # Verify fastcov JSON file is valid and has data
+        if not fastcov_path.exists():
+            print(f"[ERROR] fastcov succeeded but output file does not exist: {fastcov_path}", file=sys.stderr)
+            stats = {
+                "functions": []
+            }
+            if job_id:
+                stats['job_id'] = job_id
+            if commit_hash:
+                stats['commit_hash'] = commit_hash
+            with open(output_statistics, 'w') as f:
+                json.dump(stats, f, indent=2)
+            return
+        
+        # Try to load and validate the JSON
+        try:
+            with open(fastcov_path, 'r') as f:
+                fastcov_data = json.load(f)
+            if 'sources' not in fastcov_data or len(fastcov_data.get('sources', {})) == 0:
+                print(f"[WARNING] fastcov JSON has no source files. Coverage data may be empty.", file=sys.stderr)
+                print(f"[WARNING] This could mean no functions were executed during fuzzing.", file=sys.stderr)
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] fastcov produced invalid JSON: {e}", file=sys.stderr)
             stats = {
                 "functions": []
             }
@@ -875,6 +943,7 @@ def analyze_fuzzing_coverage(
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             print(f"[ERROR] Coverage analysis failed: {result.stderr}", file=sys.stderr)
+            print(f"[ERROR] Coverage analysis stdout: {result.stdout}", file=sys.stderr)
         else:
             print(result.stdout)
     

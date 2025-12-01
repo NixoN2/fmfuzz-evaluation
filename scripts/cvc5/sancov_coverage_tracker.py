@@ -72,13 +72,25 @@ class SancovCoverageTracker:
         Find .sancov files in coverage directory.
         
         If binary_name is set, only match files for that binary.
+        Note: .sancov files are named <pid>.<binary_name>.sancov
         """
-        pattern = "*.sancov"
-        if self.binary_name:
-            # Match pattern: <pid>.<binary_name>.sancov
-            pattern = f"*.{self.binary_name}.sancov"
+        # Try multiple patterns to find .sancov files
+        patterns = ["*.sancov"]  # All .sancov files
         
-        sancov_files = list(self.coverage_dir.glob(pattern))
+        if self.binary_name:
+            # Try exact binary name
+            patterns.append(f"*.{self.binary_name}.sancov")
+            # Also try without extension (in case binary_name includes path)
+            binary_base = Path(self.binary_name).name if self.binary_name else None
+            if binary_base:
+                patterns.append(f"*.{binary_base}.sancov")
+        
+        all_files = set()
+        for pattern in patterns:
+            files = list(self.coverage_dir.glob(pattern))
+            all_files.update(files)
+        
+        sancov_files = list(all_files)
         
         # Filter out already processed files
         new_files = [f for f in sancov_files if str(f) not in self.processed_files]
@@ -93,6 +105,10 @@ class SancovCoverageTracker:
             Dict with 'new_pcs', 'total_pcs', 'new_files' counts
         """
         sancov_files = self.find_sancov_files(test_id)
+        
+        # Debug: list all .sancov files if any found
+        if sancov_files:
+            print(f"[Sancov] Found {len(sancov_files)} .sancov file(s) to process", file=sys.stderr)
         
         new_pcs = set()
         new_files_count = 0

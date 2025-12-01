@@ -616,10 +616,23 @@ class SimpleCommitFuzzer:
         start_time = time.time()
         
         try:
+            # Ensure ASAN_OPTIONS is passed to subprocess
+            env = os.environ.copy()
+            if self.enable_sancov:
+                # Make sure ASAN_OPTIONS is set with absolute path for coverage_dir
+                asan_opts = env.get('ASAN_OPTIONS', '')
+                coverage_dir_abs = str(self.coverage_dir.resolve())
+                if 'coverage=1' not in asan_opts:
+                    coverage_opts = f'coverage=1:coverage_dir={coverage_dir_abs}:abort_on_error=0:detect_leaks=0'
+                    env['ASAN_OPTIONS'] = f"{asan_opts}:{coverage_opts}" if asan_opts else coverage_opts
+                elif 'coverage_dir=' not in asan_opts:
+                    # Update coverage_dir to absolute path
+                    env['ASAN_OPTIONS'] = f"{asan_opts}:coverage_dir={coverage_dir_abs}"
+            
             if per_test_timeout and per_test_timeout > 0:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=per_test_timeout)
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=per_test_timeout, env=env)
             else:
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                result = subprocess.run(cmd, capture_output=True, text=True, env=env)
             
             exit_code = result.returncode
             runtime = time.time() - start_time
@@ -628,11 +641,20 @@ class SimpleCommitFuzzer:
             # Update sancov coverage tracking if enabled
             if self.enable_sancov and self.coverage_tracker:
                 try:
+                    # List .sancov files for debugging
+                    sancov_files = list(self.coverage_dir.glob("*.sancov"))
+                    if sancov_files:
+                        print(f"[WORKER {worker_id}] [Sancov] Found {len(sancov_files)} .sancov file(s) in {self.coverage_dir}")
+                    
                     coverage_info = self.coverage_tracker.update_coverage(test_id=test_name)
                     if coverage_info['new_pcs'] > 0:
                         print(f"[WORKER {worker_id}] [Sancov] New coverage: {coverage_info['new_pcs']} PCs (total: {coverage_info['total_pcs']})")
+                    elif coverage_info['new_files'] > 0:
+                        print(f"[WORKER {worker_id}] [Sancov] Found {coverage_info['new_files']} new .sancov file(s) but no new PCs")
                 except Exception as e:
                     print(f"[WORKER {worker_id}] [Sancov] Error updating coverage: {e}", file=sys.stderr)
+                    import traceback
+                    traceback.print_exc(file=sys.stderr)
             
             return (exit_code, bug_files, runtime)
             

@@ -1143,11 +1143,15 @@ def main():
     if args.output_changed_functions:
         changed_functions_data = {
             'commit_hash': args.commit,
-            'changed_functions': result['changed_functions']
+            'changed_functions': result['changed_functions'],
+            'function_info_map': result.get('function_info_map', {})
         }
         with open(args.output_changed_functions, 'w') as f:
             json.dump(changed_functions_data, f, indent=2)
         print(f"Changed functions written to {args.output_changed_functions} ({len(result['changed_functions'])} functions)")
+        if result.get('function_info_map'):
+            mangled_count = sum(1 for v in result['function_info_map'].values() if v.get('mangled_name'))
+            print(f"  Includes {mangled_count} functions with mangled names for sancov allowlist")
     
     return 0
 

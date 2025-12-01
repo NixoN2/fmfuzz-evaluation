@@ -1,0 +1,84 @@
+#!/bin/bash
+# Build CVC5 with sancov coverage instrumentation and allowlist
+# Usage: ./build_sancov.sh [--allowlist=coverage_allowlist.txt] [--jobs=N]
+
+set -e  # Exit on any error
+
+# Default values
+ALLOWLIST_FILE="coverage_allowlist.txt"
+JOBS=$(nproc)
+CVC5_DIR="cvc5"
+BUILD_DIR="build"
+
+# Parse arguments
+for arg in "$@"; do
+    case $arg in
+        --allowlist=*)
+            ALLOWLIST_FILE="${arg#*=}"
+            shift
+            ;;
+        --jobs=*)
+            JOBS="${arg#*=}"
+            shift
+            ;;
+        --cvc5-dir=*)
+            CVC5_DIR="${arg#*=}"
+            shift
+            ;;
+        --build-dir=*)
+            BUILD_DIR="${arg#*=}"
+            shift
+            ;;
+        *)
+            echo "Unknown option: $arg"
+            echo "Usage: $0 [--allowlist=FILE] [--jobs=N] [--cvc5-dir=DIR] [--build-dir=DIR]"
+            exit 1
+            ;;
+    esac
+done
+
+echo "🔧 Building CVC5 with sancov coverage instrumentation"
+echo "  Allowlist: $ALLOWLIST_FILE"
+echo "  Jobs: $JOBS"
+echo "  CVC5 dir: $CVC5_DIR"
+echo "  Build dir: $BUILD_DIR"
+
+# Check if allowlist exists
+if [ ! -f "$ALLOWLIST_FILE" ]; then
+    echo "⚠️  Warning: Allowlist file not found: $ALLOWLIST_FILE"
+    echo "   Building without allowlist (all functions will be instrumented)"
+    ALLOWLIST_FLAG=""
+else
+    echo "✅ Using allowlist: $ALLOWLIST_FILE"
+    ALLOWLIST_FLAG="-fsanitize-coverage-allowlist=$ALLOWLIST_FILE"
+fi
+
+# Check if CVC5 directory exists
+if [ ! -d "$CVC5_DIR" ]; then
+    echo "❌ Error: CVC5 directory not found: $CVC5_DIR"
+    exit 1
+fi
+
+cd "$CVC5_DIR"
+
+# Set up environment variables for sancov
+export CXXFLAGS="${CXXFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
+export CFLAGS="${CFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
+export LDFLAGS="${LDFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address"
+
+# Configure CVC5 with debug build (required for coverage)
+echo "🔨 Configuring CVC5..."
+./configure.sh debug --assertions --auto-download
+
+# Build
+echo "🔨 Building CVC5..."
+cd "$BUILD_DIR"
+make -j"$JOBS"
+
+echo "✅ Build complete!"
+echo ""
+echo "To run with sancov coverage, set:"
+echo "  export ASAN_OPTIONS='coverage=1:coverage_dir=.:abort_on_error=0:detect_leaks=0'"
+echo ""
+echo "Coverage files will be written as: <pid>.<binary>.sancov"
+

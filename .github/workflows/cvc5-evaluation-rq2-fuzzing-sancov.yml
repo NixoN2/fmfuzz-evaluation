@@ -289,7 +289,10 @@ jobs:
             python3-pip \
             unzip \
             wget \
-            binutils  # for c++filt
+            binutils \
+            clang \
+            libc++-dev \
+            libc++abi-dev
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
 

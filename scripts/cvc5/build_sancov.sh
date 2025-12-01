@@ -61,7 +61,18 @@ fi
 
 cd "$CVC5_DIR"
 
-# Set up environment variables for sancov
+# Check if Clang is available (required for sancov)
+if ! command -v clang++ &> /dev/null; then
+    echo "❌ Error: clang++ not found. Sancov requires Clang compiler."
+    echo "   Please install Clang (e.g., sudo apt-get install clang)"
+    exit 1
+fi
+
+echo "✅ Using Clang: $(clang++ --version | head -1)"
+
+# Set up environment variables for sancov (Clang-specific)
+export CC=clang
+export CXX=clang++
 export CXXFLAGS="${CXXFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
 export CFLAGS="${CFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
 export LDFLAGS="${LDFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address"

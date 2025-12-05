@@ -235,8 +235,9 @@ jobs:
           echo "[]" > /tmp/all_entries.json
           for matrix_file in matrices/combined-matrix-*/combined_matrix.json; do
             if [ -f "$matrix_file" ]; then
-              # Merge arrays: current entries + new entries from this file
-              jq -s '.[0] + (.[1].include // [])' /tmp/all_entries.json "$matrix_file" > /tmp/all_entries_new.json
+              # Handle both formats: {"include": [...]} or [...]
+              # Extract array from either format
+              jq -s '.[0] + (if (.[1] | type) == "object" then (.[1].include // []) else .[1] end)' /tmp/all_entries.json "$matrix_file" > /tmp/all_entries_new.json
               mv /tmp/all_entries_new.json /tmp/all_entries.json
             fi
           done
@@ -245,8 +246,9 @@ jobs:
           jq -c '{include: .}' /tmp/all_entries.json > fuzzing_matrix.json
           
           # Create minimal matrix for job outputs (only commit + job_id to avoid size limits)
+          # Note: /tmp/all_entries.json is an array, so we iterate over it directly
           jq -c '{
-            include: [.include[] | {
+            include: [.[] | {
               commit: .commit,
               job_id: .fuzzer_job.job_id
             }]

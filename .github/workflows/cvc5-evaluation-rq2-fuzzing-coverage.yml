@@ -231,36 +231,16 @@ jobs:
       - name: Merge all matrices
         id: merge-matrices
         run: |
-          # Collect all matrix entries using temporary file to avoid "Argument list too long"
-          echo "[]" > /tmp/all_entries.json
-          for matrix_file in matrices/combined-matrix-*/combined_matrix.json; do
-            if [ -f "$matrix_file" ]; then
-              # Handle both formats: {"include": [...]} or [...]
-              # Extract array from either format
-              jq -s '.[0] + (if (.[1] | type) == "object" then (.[1].include // []) else .[1] end)' /tmp/all_entries.json "$matrix_file" > /tmp/all_entries_new.json
-              mv /tmp/all_entries_new.json /tmp/all_entries.json
-            fi
-          done
-          
-          # Create final matrix structure with full data (for artifact)
-          jq -c '{include: .}' /tmp/all_entries.json > fuzzing_matrix.json
-          
-          # Create minimal matrix for job outputs (only commit + job_id to avoid size limits)
-          # Note: /tmp/all_entries.json is an array, so we iterate over it directly
-          jq -c '{
-            include: [.[] | {
-              commit: .commit,
-              job_id: .fuzzer_job.job_id
-            }]
-          }' /tmp/all_entries.json > fuzzing_matrix_minimal.json
-          
-          COUNT=$(jq 'length' /tmp/all_entries.json)
-          echo "✅ Merged matrices: $COUNT total fuzzing jobs"
+          # Use Python script for reliable matrix merging
+          TOTAL_JOBS=$(python3 ${{ github.workspace }}/scripts/merge_fuzzing_matrices.py \
+            fuzzing_matrix.json \
+            "matrices/combined-matrix-*/combined_matrix.json" \
+            --minimal-output fuzzing_matrix_minimal.json)
           
           # Use minimal matrix for job output (much smaller)
           MINIMAL_MATRIX=$(cat fuzzing_matrix_minimal.json)
           echo "fuzzing_matrix=$MINIMAL_MATRIX" >> $GITHUB_OUTPUT
-          echo "total_jobs=$COUNT" >> $GITHUB_OUTPUT
+          echo "total_jobs=$TOTAL_JOBS" >> $GITHUB_OUTPUT
       
       - name: Upload merged matrix (full data)
         uses: actions/upload-artifact@v4
@@ -291,39 +271,26 @@ jobs:
       - name: Extract test list for this job
         id: extract-tests
         run: |
-          # Debug: show what we're looking for
           echo "Looking for commit: ${{ matrix.commit }}, job_id: ${{ matrix.job_id }}"
           
-          # Debug: show first few entries in the matrix
-          echo "First few matrix entries:"
-          jq '.include[0:3]' fuzzing_matrix.json || true
+          # Use Python script for reliable extraction
+          TESTS_JSON=$(python3 ${{ github.workspace }}/scripts/extract_matrix_tests.py \
+            fuzzing_matrix.json \
+            "${{ matrix.commit }}" \
+            "${{ matrix.job_id }}")
           
-          # Find the entry in the full matrix that matches this job
-          # Handle both string and numeric job_id, and commit hash matching (short or full)
-          JOB_DATA=$(jq -c --arg commit "${{ matrix.commit }}" --arg job_id "${{ matrix.job_id }}" '
-            .include[] | 
-            select(
-              (.commit == $commit or (.commit | startswith($commit)) or ($commit | startswith(.commit))) and
-              (.fuzzer_job.job_id == $job_id or (.fuzzer_job.job_id | tostring) == $job_id)
-            ) |
-            .fuzzer_job.tests
-          ' fuzzing_matrix.json)
-          
-          if [ -z "$JOB_DATA" ] || [ "$JOB_DATA" = "null" ]; then
-            echo "❌ Error: Could not find test data for commit ${{ matrix.commit }}, job_id ${{ matrix.job_id }}"
-            echo "Available commits in matrix:"
-            jq -r '.include[].commit' fuzzing_matrix.json | sort -u | head -5
-            echo "Available job_ids for this commit:"
-            jq -r --arg commit "${{ matrix.commit }}" '.include[] | select(.commit == $commit or (.commit | startswith($commit)) or ($commit | startswith(.commit))) | .fuzzer_job.job_id' fuzzing_matrix.json | sort -u | head -5
+          if [ $? -ne 0 ]; then
+            echo "❌ Failed to extract test data"
             exit 1
           fi
           
           # Output tests as multiline JSON (GitHub Actions supports this)
           echo "tests<<EOF" >> $GITHUB_OUTPUT
-          echo "$JOB_DATA" >> $GITHUB_OUTPUT
+          echo "$TESTS_JSON" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           
-          echo "✅ Extracted $(echo "$JOB_DATA" | jq 'length') tests for job ${{ matrix.job_id }}"
+          TEST_COUNT=$(echo "$TESTS_JSON" | python3 -c "import sys, json; print(len(json.load(sys.stdin)))")
+          echo "✅ Extracted $TEST_COUNT tests for job ${{ matrix.job_id }}"
       
       - name: Install system dependencies
         run: |

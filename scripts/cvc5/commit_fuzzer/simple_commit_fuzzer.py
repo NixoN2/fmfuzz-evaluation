@@ -522,9 +522,11 @@ class SimpleCommitFuzzer:
         # if self.z3_old_path:
         #     solvers.append(str(self.z3_old_path))
         # CVC5: No built-in memory limit - rely on our process killing mechanism (max_process_memory_mb)
-        base_flags = "--check-models --check-proofs --strings-exp"
+        # Use cadical solver to match coverage mapping behavior (coverage mapping found cadical functions executed)
+        base_flags = "--check-models --check-proofs --strings-exp --sat-solver=cadical"
         
         # Extract COMMAND-LINE flags from test file if provided (to match coverage mapping behavior)
+        # Note: Test flags are extracted but cadical is already included above
         test_flags = ""
         if test_path and test_path.exists():
             test_flags = self._extract_command_line_flags(test_path)
@@ -532,6 +534,8 @@ class SimpleCommitFuzzer:
                 # Merge test flags with base flags (test flags may override base flags)
                 # For now, just append test flags after base flags
                 base_flags = f"{base_flags} {test_flags}"
+                print(f"[DEBUG] Extracted COMMAND-LINE flags from {test_path.name}: {test_flags}", file=sys.stderr)
+                print(f"[DEBUG] Final CVC5 command: {self.cvc5_path} {base_flags}", file=sys.stderr)
         
         solvers.append(f"{self.cvc5_path} {base_flags}")
         # if self.cvc4_path:
@@ -588,6 +592,12 @@ class SimpleCommitFuzzer:
         
         # Extract COMMAND-LINE flags from test file and include them in solver command
         solver_clis = self._get_solver_clis(test_path)
+        
+        # Debug: Check if test has COMMAND-LINE flags
+        test_flags_debug = self._extract_command_line_flags(test_path)
+        if test_flags_debug:
+            print(f"[WORKER {worker_id}] Test {test_name} has COMMAND-LINE flags: {test_flags_debug}", file=sys.stderr)
+            print(f"[WORKER {worker_id}] CVC5 command will include: {test_flags_debug}", file=sys.stderr)
         
         cmd = [
             "typefuzz",

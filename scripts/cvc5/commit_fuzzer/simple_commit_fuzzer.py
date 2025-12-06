@@ -522,11 +522,9 @@ class SimpleCommitFuzzer:
         # if self.z3_old_path:
         #     solvers.append(str(self.z3_old_path))
         # CVC5: No built-in memory limit - rely on our process killing mechanism (max_process_memory_mb)
-        # Use cadical solver to match coverage mapping behavior (coverage mapping found cadical functions executed)
-        base_flags = "--check-models --check-proofs --strings-exp --sat-solver=cadical"
+        base_flags = "--check-models --check-proofs --strings-exp"
         
         # Extract COMMAND-LINE flags from test file if provided (to match coverage mapping behavior)
-        # Note: Test flags are extracted but cadical is already included above
         test_flags = ""
         if test_path and test_path.exists():
             test_flags = self._extract_command_line_flags(test_path)
@@ -539,9 +537,6 @@ class SimpleCommitFuzzer:
         
         cvc5_cmd = f"{self.cvc5_path} {base_flags}"
         solvers.append(cvc5_cmd)
-        # Debug: Always log the CVC5 command to verify --sat-solver=cadical is included
-        if '--sat-solver=cadical' in base_flags:
-            print(f"[DEBUG] CVC5 command includes --sat-solver=cadical: {cvc5_cmd}", file=sys.stderr)
         # if self.cvc4_path:
         #     solvers.append(str(self.cvc4_path))
         return ";".join(solvers)
@@ -867,6 +862,29 @@ def analyze_fuzzing_coverage(
 ):
     """Collect coverage with fastcov and analyze changed functions"""
     import tempfile
+    
+    # Debug: Check for .gcda files before running fastcov, specifically for cadical
+    print(f"[DEBUG] Checking for coverage files in {build_dir}...", file=sys.stderr)
+    gcda_files = list(build_dir.rglob("*.gcda"))
+    gcno_files = list(build_dir.rglob("*.gcno"))
+    print(f"[DEBUG] Found {len(gcda_files)} .gcda files and {len(gcno_files)} .gcno files", file=sys.stderr)
+    
+    # Check specifically for cadical .gcda files
+    cadical_gcda_files = [f for f in gcda_files if 'cadical' in str(f).lower()]
+    cadical_gcno_files = [f for f in gcno_files if 'cadical' in str(f).lower()]
+    print(f"[DEBUG] Found {len(cadical_gcda_files)} cadical .gcda files and {len(cadical_gcno_files)} cadical .gcno files", file=sys.stderr)
+    if cadical_gcda_files:
+        print(f"[DEBUG] Sample cadical .gcda files (first 5):", file=sys.stderr)
+        for gcda in cadical_gcda_files[:5]:
+            print(f"[DEBUG]   - {gcda}", file=sys.stderr)
+    else:
+        print(f"[DEBUG] ⚠️  WARNING: No cadical .gcda files found!", file=sys.stderr)
+        print(f"[DEBUG] This suggests cadical functions were not executed during fuzzing", file=sys.stderr)
+        if cadical_gcno_files:
+            print(f"[DEBUG] But cadical .gcno files exist ({len(cadical_gcno_files)}), so cadical is instrumented", file=sys.stderr)
+            print(f"[DEBUG] Sample cadical .gcno files (first 3):", file=sys.stderr)
+            for gcno in cadical_gcno_files[:3]:
+                print(f"[DEBUG]   - {gcno}", file=sys.stderr)
     
     # Run fastcov to collect coverage
     fastcov_output = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)

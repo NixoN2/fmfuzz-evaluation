@@ -537,7 +537,11 @@ class SimpleCommitFuzzer:
                 print(f"[DEBUG] Extracted COMMAND-LINE flags from {test_path.name}: {test_flags}", file=sys.stderr)
                 print(f"[DEBUG] Final CVC5 command: {self.cvc5_path} {base_flags}", file=sys.stderr)
         
-        solvers.append(f"{self.cvc5_path} {base_flags}")
+        cvc5_cmd = f"{self.cvc5_path} {base_flags}"
+        solvers.append(cvc5_cmd)
+        # Debug: Always log the CVC5 command to verify --sat-solver=cadical is included
+        if '--sat-solver=cadical' in base_flags:
+            print(f"[DEBUG] CVC5 command includes --sat-solver=cadical: {cvc5_cmd}", file=sys.stderr)
         # if self.cvc4_path:
         #     solvers.append(str(self.cvc4_path))
         return ";".join(solvers)
@@ -593,11 +597,15 @@ class SimpleCommitFuzzer:
         # Extract COMMAND-LINE flags from test file and include them in solver command
         solver_clis = self._get_solver_clis(test_path)
         
+        # Debug: Always show the CVC5 command being used
+        cvc5_cmd = [s for s in solver_clis.split(';') if 'cvc5' in s or 'CVC5' in s]
+        if cvc5_cmd:
+            print(f"[WORKER {worker_id}] CVC5 command: {cvc5_cmd[0]}", file=sys.stderr)
+        
         # Debug: Check if test has COMMAND-LINE flags
         test_flags_debug = self._extract_command_line_flags(test_path)
         if test_flags_debug:
             print(f"[WORKER {worker_id}] Test {test_name} has COMMAND-LINE flags: {test_flags_debug}", file=sys.stderr)
-            print(f"[WORKER {worker_id}] CVC5 command will include: {test_flags_debug}", file=sys.stderr)
         
         cmd = [
             "typefuzz",

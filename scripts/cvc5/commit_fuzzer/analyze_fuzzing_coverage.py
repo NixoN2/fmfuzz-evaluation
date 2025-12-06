@@ -40,10 +40,17 @@ def normalize_file_path(file_path: str) -> str:
     if '/src/' in file_path:
         parts = file_path.split('/src/')
         if len(parts) > 1:
-            return 'src/' + parts[1]
+            normalized = 'src/' + parts[1]
+            # Debug: log cadical files specifically
+            if 'cadical' in normalized.lower():
+                print(f"[DEBUG] Normalized cadical path: {file_path} -> {normalized}", file=sys.stderr)
+            return normalized
     
     # If it already starts with src/, return as is
     if file_path.startswith('src/'):
+        # Debug: log cadical files specifically
+        if 'cadical' in file_path.lower():
+            print(f"[DEBUG] Cadical path (already normalized): {file_path}", file=sys.stderr)
         return file_path
     
     # Otherwise return as is (might be absolute path)
@@ -124,6 +131,22 @@ def find_function_in_fastcov(fastcov_data: Dict, file_path: str,
         # Try to find by basename (fastcov uses absolute paths)
         basename = file_path.split('/')[-1]
         matching_files = [f for f in fastcov_data['sources'].keys() if f.endswith('/' + basename) or f.endswith('\\' + basename)]
+        
+        # Special handling for cadical files - check if they're being excluded
+        if 'cadical' in file_path.lower():
+            print(f"[DEBUG] Cadical file not found with direct path matching", file=sys.stderr)
+            print(f"[DEBUG]   Looking for: {file_path} (normalized: {normalized_path})", file=sys.stderr)
+            # Check if any cadical files exist in fastcov at all
+            cadical_files = [f for f in fastcov_data['sources'].keys() if 'cadical' in f.lower()]
+            if cadical_files:
+                print(f"[DEBUG]   Found {len(cadical_files)} cadical files in fastcov:", file=sys.stderr)
+                for cf in cadical_files[:5]:
+                    print(f"[DEBUG]     - {cf}", file=sys.stderr)
+            else:
+                print(f"[DEBUG]   ⚠️  WARNING: No cadical files found in fastcov output at all!", file=sys.stderr)
+                print(f"[DEBUG]   This suggests cadical files might be excluded by fastcov", file=sys.stderr)
+                print(f"[DEBUG]   Check if cadical is in a deps/ directory or excluded by other patterns", file=sys.stderr)
+        
         if debug:
             print(f"  [DEBUG] File not found with normalized or original path")
             print(f"  [DEBUG] Available files (first 10): {list(fastcov_data['sources'].keys())[:10]}")

@@ -832,8 +832,25 @@ def analyze_fuzzing_coverage(
             "--output", str(fastcov_path),
             "--exclude", "/usr/include/*",
             "--exclude", "*/deps/*",
+            # Note: cadical is in src/prop/cadical/, not in deps/, so it should NOT be excluded
+            # If cadical files are missing, check if they're actually in deps/ or have a different path
             "--jobs", "4"
         ], cwd=build_dir.parent, capture_output=True, text=True, check=False)
+        
+        # Debug: Check if cadical files are in the fastcov output
+        if fastcov_path.exists():
+            try:
+                with open(fastcov_path, 'r') as f:
+                    fastcov_data = json.load(f)
+                if 'sources' in fastcov_data:
+                    cadical_files = [f for f in fastcov_data['sources'].keys() if 'cadical' in f.lower()]
+                    if cadical_files:
+                        print(f"[INFO] Found {len(cadical_files)} cadical files in fastcov output", file=sys.stderr)
+                    else:
+                        print(f"[WARNING] No cadical files found in fastcov output!", file=sys.stderr)
+                        print(f"[WARNING] This might indicate cadical files are being excluded or not instrumented", file=sys.stderr)
+            except Exception as e:
+                print(f"[WARNING] Could not check for cadical files in fastcov output: {e}", file=sys.stderr)
         
         if result.returncode != 0:
             print(f"[ERROR] fastcov failed: {result.stderr}", file=sys.stderr)

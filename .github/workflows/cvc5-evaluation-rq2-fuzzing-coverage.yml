@@ -8,6 +8,10 @@ on:
         required: false
         type: number
         default: 60
+      debug_commit_hash:
+        description: 'Debug: Specific commit hash to test (e.g., 686e31842b7b020382e8af38507fd616fed78740). If provided, only this commit will be fuzzed.'
+        required: false
+        type: string
 
 jobs:
   generate-matrix:
@@ -44,15 +48,27 @@ jobs:
           AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          RESULT=$(python3 scripts/rq2/generate_fuzzing_matrix.py cvc5)
-          
-          COMMIT_MATRIX=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(json.dumps({'include': data['include']}, separators=(',', ':')))")
-          TOTAL_COMMITS=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['total_commits'])")
-          
-          echo "commit_matrix=$COMMIT_MATRIX" >> $GITHUB_OUTPUT
-          echo "total_commits=$TOTAL_COMMITS" >> $GITHUB_OUTPUT
-          
-          echo "✅ Generated matrix: $TOTAL_COMMITS commits"
+          # If debug commit hash is provided, use only that commit
+          if [ -n "${{ inputs.debug_commit_hash }}" ]; then
+            echo "🔍 Debug mode: Using specific commit ${{ inputs.debug_commit_hash }}"
+            DEBUG_COMMIT="${{ inputs.debug_commit_hash }}"
+            # Create a matrix with just this commit
+            COMMIT_MATRIX=$(python3 -c "import json; print(json.dumps({'include': [{'commit': '$DEBUG_COMMIT'}]}, separators=(',', ':')))")
+            TOTAL_COMMITS=1
+            echo "commit_matrix=$COMMIT_MATRIX" >> $GITHUB_OUTPUT
+            echo "total_commits=$TOTAL_COMMITS" >> $GITHUB_OUTPUT
+            echo "✅ Debug mode: Generated matrix with 1 commit ($DEBUG_COMMIT)"
+          else
+            RESULT=$(python3 scripts/rq2/generate_fuzzing_matrix.py cvc5)
+            
+            COMMIT_MATRIX=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(json.dumps({'include': data['include']}, separators=(',', ':')))")
+            TOTAL_COMMITS=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['total_commits'])")
+            
+            echo "commit_matrix=$COMMIT_MATRIX" >> $GITHUB_OUTPUT
+            echo "total_commits=$TOTAL_COMMITS" >> $GITHUB_OUTPUT
+            
+            echo "✅ Generated matrix: $TOTAL_COMMITS commits"
+          fi
 
   prepare-commit-fuzzer:
     needs: generate-matrix

@@ -154,14 +154,36 @@ def find_function_in_fastcov(fastcov_data: Dict, file_path: str,
                 print(f"  [DEBUG] Files with matching basename: {matching_files[:5]}")
         
         if matching_files:
-            # Use the first matching file (prefer paths containing 'src/')
-            preferred = [f for f in matching_files if '/src/' in f or '\\src\\' in f]
-            if preferred:
-                file_data = fastcov_data['sources'].get(preferred[0])
+            # When multiple files have the same basename, prefer the one that matches the directory path
+            # Extract directory from original file_path (e.g., "prop/cadical" from "src/prop/cadical/util.cpp")
+            file_dir = '/'.join(file_path.split('/')[:-1]) if '/' in file_path else ''
+            
+            # Simple fix: prefer files that contain the directory path as a substring
+            if file_dir:
+                # Get the key part of the directory (last 2 parts, e.g., "prop/cadical" from "src/prop/cadical")
+                dir_parts = [p for p in file_dir.split('/') if p]
+                if len(dir_parts) >= 2:
+                    key_path = '/'.join(dir_parts[-2:])  # e.g., "prop/cadical"
+                else:
+                    key_path = dir_parts[-1] if dir_parts else ''
+                
+                # Find files that contain this key path
+                preferred = [f for f in matching_files if key_path in f]
+                
+                if preferred:
+                    file_data = fastcov_data['sources'].get(preferred[0])
+                    if debug:
+                        print(f"  [DEBUG] Using file (matched by '{key_path}'): {preferred[0]}")
+                else:
+                    # Fallback: use first matching file
+                    file_data = fastcov_data['sources'].get(matching_files[0])
+                    if debug:
+                        print(f"  [DEBUG] Using file (no directory match, first file): {matching_files[0]}")
             else:
+                # No directory info, use first matching file
                 file_data = fastcov_data['sources'].get(matching_files[0])
-            if debug and file_data:
-                print(f"  [DEBUG] Using file: {preferred[0] if preferred else matching_files[0]}")
+                if debug:
+                    print(f"  [DEBUG] Using file (no directory info): {matching_files[0]}")
     
     if not file_data:
         return None

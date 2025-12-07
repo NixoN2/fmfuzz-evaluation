@@ -557,6 +557,40 @@ class SimpleCommitFuzzer:
         #     solvers.append(str(self.cvc4_path))
         return ";".join(solvers)
     
+    def _run_test_directly(self, test_name: str, timeout: int = 30) -> bool:
+        """Run CVC5 directly on a test (without typefuzz) to ensure coverage is recorded.
+        
+        When typefuzz kills processes, gcov coverage data is NOT flushed.
+        Running tests directly ensures normal termination and coverage flushing.
+        """
+        test_path = self.tests_root / test_name
+        if not test_path.exists():
+            print(f"[DIRECT] Test not found: {test_path}", file=sys.stderr)
+            return False
+        
+        # Extract COMMAND-LINE flags from test file
+        test_flags = self._extract_command_line_flags(test_path)
+        
+        # Build CVC5 command with all flags
+        # TEMPORARY: --sat-solver=cadical --bitblast=eager for debugging
+        base_flags = "--sat-solver=cadical --bitblast=eager"
+        if test_flags:
+            base_flags = f"{base_flags} {test_flags}"
+        
+        cmd = [str(self.cvc5_path)] + base_flags.split() + [str(test_path)]
+        print(f"[DIRECT] Running: {' '.join(cmd)}", file=sys.stderr)
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            print(f"[DIRECT] Exit code: {result.returncode}, stdout: {result.stdout[:100] if result.stdout else '(empty)'}...", file=sys.stderr)
+            return result.returncode == 0
+        except subprocess.TimeoutExpired:
+            print(f"[DIRECT] Timeout after {timeout}s", file=sys.stderr)
+            return False
+        except Exception as e:
+            print(f"[DIRECT] Error: {e}", file=sys.stderr)
+            return False
+    
     def _compute_time_remaining(self, job_start_time: float, stop_buffer_minutes: int) -> int:
         GITHUB_TIMEOUT = 21600
         MIN_REMAINING = 600
@@ -801,6 +835,15 @@ class SimpleCommitFuzzer:
             print(f"[INFO] Prioritizing {len(priority_tests)} cadical-specific tests at front of queue")
             for pt in priority_tests:
                 print(f"  - {pt}")
+        
+        # Run priority tests DIRECTLY (without typefuzz) first to ensure coverage is recorded
+        # typefuzz can kill processes which prevents gcov from flushing coverage data
+        if priority_tests:
+            print(f"[INFO] Running {len(priority_tests)} cadical tests directly (without typefuzz) for coverage...")
+            for pt in priority_tests:
+                test_path = self.tests_root / pt
+                if test_path.exists():
+                    self._run_test_directly(pt)
         
         # Add priority tests first, then others
         for test in priority_tests:

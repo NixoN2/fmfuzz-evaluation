@@ -21,35 +21,75 @@ from typing import Dict, List, Optional
 # Timing stats for demangle
 _demangle_call_count = 0
 _demangle_total_time = 0.0
+_demangle_cache: Dict[str, str] = {}
 
-def demangle_function_name(mangled_name: str) -> str:
-    """Demangle C++ function names using c++filt"""
+def batch_demangle_names(mangled_names: List[str]) -> Dict[str, str]:
+    """Batch demangle multiple C++ function names using a single c++filt call.
+    
+    Returns a dict mapping mangled names to demangled names.
+    """
     global _demangle_call_count, _demangle_total_time
     
-    if not mangled_name:
-        return mangled_name
+    if not mangled_names:
+        return {}
+    
+    # Filter out already cached names
+    names_to_demangle = [n for n in mangled_names if n and n not in _demangle_cache]
+    
+    if not names_to_demangle:
+        return {n: _demangle_cache.get(n, n) for n in mangled_names}
     
     _demangle_call_count += 1
     start = time.time()
     
+    result = {}
     try:
-        result = subprocess.run(['c++filt', mangled_name], 
-                              capture_output=True, text=True, check=False)
-        if result.returncode == 0 and result.stdout:
-            _demangle_total_time += time.time() - start
-            return result.stdout.strip()
+        # Pass all names to c++filt via stdin (one per line)
+        input_text = '\n'.join(names_to_demangle)
+        proc = subprocess.run(['c++filt'], 
+                            input=input_text,
+                            capture_output=True, text=True, check=False)
+        if proc.returncode == 0 and proc.stdout:
+            demangled_list = proc.stdout.strip().split('\n')
+            for mangled, demangled in zip(names_to_demangle, demangled_list):
+                _demangle_cache[mangled] = demangled
+                result[mangled] = demangled
     except Exception:
-        pass
+        # On error, return original names
+        for name in names_to_demangle:
+            _demangle_cache[name] = name
+            result[name] = name
     
     _demangle_total_time += time.time() - start
-    return mangled_name
+    
+    # Include cached results for all requested names
+    for name in mangled_names:
+        if name not in result:
+            result[name] = _demangle_cache.get(name, name)
+    
+    return result
+
+
+def demangle_function_name(mangled_name: str) -> str:
+    """Demangle a single C++ function name using c++filt (uses cache)"""
+    global _demangle_cache
+    
+    if not mangled_name:
+        return mangled_name
+    
+    if mangled_name in _demangle_cache:
+        return _demangle_cache[mangled_name]
+    
+    # Single name: batch it
+    result = batch_demangle_names([mangled_name])
+    return result.get(mangled_name, mangled_name)
+
 
 def print_demangle_stats():
     """Print demangle timing statistics"""
-    print(f"[TIMING] demangle_function_name called {_demangle_call_count} times", file=sys.stderr)
+    print(f"[TIMING] batch_demangle_names called {_demangle_call_count} times", file=sys.stderr)
     print(f"[TIMING] Total demangle time: {_demangle_total_time:.2f}s", file=sys.stderr)
-    if _demangle_call_count > 0:
-        print(f"[TIMING] Average per call: {_demangle_total_time/_demangle_call_count*1000:.2f}ms", file=sys.stderr)
+    print(f"[TIMING] Cache size: {len(_demangle_cache)} entries", file=sys.stderr)
 
 
 def normalize_file_path(file_path: str) -> str:
@@ -173,6 +213,11 @@ def find_function_in_fastcov(fastcov_data: Dict, file_path: str,
         return None
     
     functions = file_data['']['functions']
+    
+    # Batch demangle all function names upfront for efficiency
+    all_mangled_names = list(functions.keys())
+    demangled_map = batch_demangle_names(all_mangled_names)
+    
     if debug:
         print(f"  [DEBUG] Found {len(functions)} functions in file")
         print(f"  [DEBUG] Function names (first 5): {list(functions.keys())[:5]}")
@@ -190,7 +235,7 @@ def find_function_in_fastcov(fastcov_data: Dict, file_path: str,
         
         print(f"  [DEBUG] Functions with execution_count > 0 in this file ({len(all_funcs_with_counts)} total):")
         for i, (mangled, count, line) in enumerate(all_funcs_with_counts[:10]):  # Show top 10
-            demangled = demangle_function_name(mangled)
+            demangled = demangled_map.get(mangled, mangled)
             print(f"    [{i+1}] exec={count:>8} line={line:>4} | {demangled[:100]}...")
         if len(all_funcs_with_counts) > 10:
             print(f"    ... and {len(all_funcs_with_counts) - 10} more functions with executions")
@@ -213,10 +258,8 @@ def find_function_in_fastcov(fastcov_data: Dict, file_path: str,
     candidates = []
     
     for mangled_name, func_data in functions.items():
-        demangled = demangle_function_name(mangled_name)
-        # The demangled name from fastcov is the full function signature
-        # (c++filt returns the complete signature, matching what coverage_mapper stores)
-        demangled_full = demangled
+        # Use pre-demangled name from batch operation
+        demangled_full = demangled_map.get(mangled_name, mangled_name)
         demangled_normalized = ' '.join(demangled_full.split())
         
         # Get line number from fastcov for reference/debugging only

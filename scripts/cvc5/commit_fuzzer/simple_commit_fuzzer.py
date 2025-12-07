@@ -923,11 +923,14 @@ def analyze_fuzzing_coverage(
         if commit_hash:
             cmd.extend(["--commit-hash", commit_hash])
         
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        print(f"[DEBUG] Running: {' '.join(cmd)}", file=sys.stderr)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=300)
+        print(f"[DEBUG] Subprocess completed with return code: {result.returncode}", file=sys.stderr)
         if result.returncode != 0:
             print(f"[ERROR] Coverage analysis failed: {result.stderr}", file=sys.stderr)
         else:
             print(result.stdout)
+        print(f"[DEBUG] analyze_fuzzing_coverage finished", file=sys.stderr)
     
     finally:
         # Clean up temp file
@@ -1137,8 +1140,10 @@ def main():
                 job_id=args.job_id,
                 commit_hash=args.commit_hash,
             )
+            print("[DEBUG] Coverage analysis complete, preparing to exit", file=sys.stderr)
         
         # Always exit with success
+        print("[DEBUG] Calling sys.exit(0)", file=sys.stderr)
         sys.exit(0)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

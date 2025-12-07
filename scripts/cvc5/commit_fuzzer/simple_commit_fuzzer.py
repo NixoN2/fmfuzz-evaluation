@@ -21,6 +21,21 @@ class SimpleCommitFuzzer:
     EXIT_CODE_UNSUPPORTED = 3
     EXIT_CODE_SUCCESS = 0
     
+    # Tests that explicitly use --sat-solver=cadical - prioritize these to ensure cadical coverage
+    CADICAL_PRIORITY_TESTS = [
+        "regress0/prop/cadical_bug1.smt2",
+        "regress0/prop/cadical_bug2.smt2",
+        "regress0/prop/cadical_bug3.smt2",
+        "regress0/prop/cadical_bug4.smt2",
+        "regress0/prop/cadical_bug5.smt2",
+        "regress0/prop/cadical_bug6.smt2",
+        "regress0/prop/cadical_bug7.smt2",
+        "regress0/prop/red-psyco-134.smt2",
+        "regress0/prop/issue11867.smt2",
+        "regress0/bv/eager-inc-cadical.smt2",
+        "regress1/sets/proj-issue668.smt2",
+    ]
+    
     RESOURCE_CONFIG = {
         'cpu_warning': 85.0,
         'cpu_critical': 95.0,
@@ -773,7 +788,24 @@ class SimpleCommitFuzzer:
         print(f"Solvers: z3={self.z3_new}, cvc5={self.cvc5_path} --check-models --check-proofs --strings-exp --sat-solver=cadical --bitblast=eager")
         print()
         
+        # Prioritize cadical tests at the front of the queue to ensure cadical coverage
+        priority_tests = []
+        other_tests = []
         for test in self.tests:
+            if any(test.endswith(p) or p in test for p in self.CADICAL_PRIORITY_TESTS):
+                priority_tests.append(test)
+            else:
+                other_tests.append(test)
+        
+        if priority_tests:
+            print(f"[INFO] Prioritizing {len(priority_tests)} cadical-specific tests at front of queue")
+            for pt in priority_tests:
+                print(f"  - {pt}")
+        
+        # Add priority tests first, then others
+        for test in priority_tests:
+            self.test_queue.put(test)
+        for test in other_tests:
             self.test_queue.put(test)
         
         workers = []

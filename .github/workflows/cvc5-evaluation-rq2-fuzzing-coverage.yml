@@ -405,10 +405,34 @@ jobs:
             --fuzzing-duration-minutes ${FUZZING_DURATION} \
             --iterations 250 \
             --cvc5-path ./build/bin/cvc5 \
-            --changed-functions ../changed_functions.json \
-            --build-dir ./build \
-            --output-statistics ../statistics_commit_${{ matrix.commit }}_job_${{ matrix.job_id }}.json \
+            --build-dir ./build
+          echo "Fuzzing step completed"
+
+      - name: Collect coverage with fastcov
+        if: always()
+        working-directory: cvc5
+        run: |
+          echo "Running fastcov..."
+          fastcov --gcov gcov \
+            --search-directory ./build \
+            --output ../fastcov_output.json \
+            --exclude "/usr/include/*" \
+            --exclude "*/deps/*" \
+            --jobs 4
+          echo "Fastcov completed"
+          ls -la ../fastcov_output.json
+
+      - name: Analyze coverage
+        if: always()
+        run: |
+          echo "Running coverage analysis..."
+          python3 scripts/cvc5/commit_fuzzer/analyze_fuzzing_coverage.py \
+            --changed-functions changed_functions.json \
+            --fastcov-json fastcov_output.json \
+            --output statistics_commit_${{ matrix.commit }}_job_${{ matrix.job_id }}.json \
+            --job-id '${{ matrix.job_id }}' \
             --commit-hash ${{ matrix.commit }}
+          echo "Coverage analysis completed"
       
       - name: Upload statistics
         if: always()

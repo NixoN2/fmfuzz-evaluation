@@ -1147,20 +1147,11 @@ def main():
         
         fuzzer.run()
         
-        # Collect and analyze coverage if requested
-        if args.changed_functions and args.output_statistics:
-            print("[INFO] Collecting coverage data...")
-            analyze_fuzzing_coverage(
-                changed_functions=args.changed_functions,
-                build_dir=Path(args.build_dir),
-                output_statistics=args.output_statistics,
-                job_id=args.job_id,
-                commit_hash=args.commit_hash,
-            )
-            print("[DEBUG] Coverage analysis complete, preparing to exit", file=sys.stderr)
+        # Coverage analysis is now done in a separate workflow step
+        # to avoid potential hang issues with subprocess capture
         
         # Always exit with success
-        print("[DEBUG] Calling sys.exit(0)", file=sys.stderr)
+        print("[INFO] Fuzzing complete, exiting", flush=True)
         sys.exit(0)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

@@ -537,8 +537,7 @@ class SimpleCommitFuzzer:
         # if self.z3_old_path:
         #     solvers.append(str(self.z3_old_path))
         # CVC5: No built-in memory limit - rely on our process killing mechanism (max_process_memory_mb)
-        # TEMPORARY: --sat-solver=cadical --bitblast=eager to force SAT solver invocation for debugging
-        base_flags = "--check-models --check-proofs --strings-exp --sat-solver=cadical --bitblast=eager"
+        base_flags = "--check-models --check-proofs --strings-exp"
         
         # Extract COMMAND-LINE flags from test file if provided (to match coverage mapping behavior)
         test_flags = ""
@@ -560,24 +559,23 @@ class SimpleCommitFuzzer:
     def _run_test_directly(self, test_name: str, timeout: int = 30) -> bool:
         """Run CVC5 directly on a test (without typefuzz) to ensure coverage is recorded.
         
-        When typefuzz kills processes, gcov coverage data is NOT flushed.
-        Running tests directly ensures normal termination and coverage flushing.
+        Uses only the test's own COMMAND-LINE flags from the test file.
+        This ensures coverage is recorded for tests that trigger specific code paths.
         """
         test_path = self.tests_root / test_name
         if not test_path.exists():
             print(f"[DIRECT] Test not found: {test_path}", file=sys.stderr)
             return False
         
-        # Extract COMMAND-LINE flags from test file
+        # Extract COMMAND-LINE flags from test file - use ONLY these flags
         test_flags = self._extract_command_line_flags(test_path)
         
-        # Build CVC5 command with all flags
-        # TEMPORARY: --sat-solver=cadical --bitblast=eager for debugging
-        base_flags = "--sat-solver=cadical --bitblast=eager"
+        # Build CVC5 command with test's own flags
+        cmd = [str(self.cvc5_path)]
         if test_flags:
-            base_flags = f"{base_flags} {test_flags}"
+            cmd.extend(test_flags.split())
+        cmd.append(str(test_path))
         
-        cmd = [str(self.cvc5_path)] + base_flags.split() + [str(test_path)]
         print(f"[DIRECT] Running: {' '.join(cmd)}", file=sys.stderr)
         
         try:
@@ -668,12 +666,6 @@ class SimpleCommitFuzzer:
         # Debug: Show the exact SOLVER_CLIS string being passed to typefuzz
         print(f"[WORKER {worker_id}] SOLVER_CLIS passed to typefuzz: {solver_clis!r}", file=sys.stderr)
         print(f"[WORKER {worker_id}] Running typefuzz on: {test_name} (timeout: {per_test_timeout}s)" if per_test_timeout else f"[WORKER {worker_id}] Running typefuzz on: {test_name}", file=sys.stderr)
-        
-        # Debug: Verify --sat-solver=cadical is in the command
-        if '--sat-solver=cadical' in solver_clis:
-            print(f"[WORKER {worker_id}] ✓ --sat-solver=cadical confirmed in SOLVER_CLIS", file=sys.stderr)
-        else:
-            print(f"[WORKER {worker_id}] ⚠️  WARNING: --sat-solver=cadical NOT found in SOLVER_CLIS!", file=sys.stderr)
         
         start_time = time.time()
         
@@ -819,7 +811,7 @@ class SimpleCommitFuzzer:
         print(f"Iterations per test: {self.iterations}, Modulo: {self.modulo}")
         print(f"CPU cores: {self.cpu_count}")
         print(f"Workers: {self.num_workers}")
-        print(f"Solvers: z3={self.z3_new}, cvc5={self.cvc5_path} --check-models --check-proofs --strings-exp --sat-solver=cadical --bitblast=eager")
+        print(f"Solvers: z3={self.z3_new}, cvc5={self.cvc5_path} --check-models --check-proofs --strings-exp")
         print()
         
         # Prioritize cadical tests at the front of the queue to ensure cadical coverage

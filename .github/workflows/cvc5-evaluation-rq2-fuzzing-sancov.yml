@@ -566,11 +566,26 @@ jobs:
             --coverage-report ../sancov_coverage_commit_${{ matrix.commit }}_job_${{ matrix.job_id }}.json || true
           
           echo ""
+          echo "=== Coverage agent logs (PROOF agent loaded) ==="
+          if [ -f /tmp/coverage_agent.log ]; then
+            echo "✅ Agent log exists! Agent WAS loaded into cvc5 processes"
+            echo "Total agent loads: $(grep -c '\[AGENT\] Loaded' /tmp/coverage_agent.log || echo 0)"
+            echo "Total counter inits: $(grep -c '__sanitizer_cov_8bit_counters_init' /tmp/coverage_agent.log || echo 0)"
+            echo "Last 20 lines:"
+            tail -20 /tmp/coverage_agent.log
+          else
+            echo "❌ coverage_agent.log NOT FOUND - Agent was NEVER loaded!"
+            echo "This means LD_PRELOAD failed (likely relative path issue)"
+          fi
+          
+          echo ""
           echo "=== Wrapper debug logs ==="
           if [ -f /tmp/wrapper_calls.log ]; then
             echo "Wrapper was called $(wc -l < /tmp/wrapper_calls.log) times"
-            echo "Last 50 lines of wrapper_calls.log:"
-            tail -50 /tmp/wrapper_calls.log
+            echo "Checking if absolute paths were used:"
+            grep "Agent absolute path" /tmp/wrapper_calls.log | head -5 || echo "  No absolute path logs found"
+            echo "Last 20 lines of wrapper_calls.log:"
+            tail -20 /tmp/wrapper_calls.log
           else
             echo "❌ wrapper_calls.log NOT FOUND - wrapper was never called!"
           fi

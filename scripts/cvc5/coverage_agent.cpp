@@ -15,6 +15,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <cstdlib>
+#include <cstdio>
+#include <ctime>
 
 constexpr size_t MAX_COUNTERS = 65536;
 constexpr size_t MAX_PCS = 65536;
@@ -72,6 +74,15 @@ static void init_shm(const char* shm_name) {
 
 // Sanitizer callbacks - these override weak symbols from compiler-rt
 extern "C" void __sanitizer_cov_8bit_counters_init(char* start, char* stop) {
+    // Log that counters were initialized (PROOF agent is loaded and working!)
+    FILE* log = fopen("/tmp/coverage_agent.log", "a");
+    if (log) {
+        size_t count = (start && stop && stop > start) ? (stop - start) : 0;
+        fprintf(log, "[AGENT] __sanitizer_cov_8bit_counters_init called! pid=%d, counter_count=%zu\n", 
+                getpid(), count);
+        fclose(log);
+    }
+    
     g_counters_start = start;
     g_counters_end = stop;
     
@@ -82,6 +93,14 @@ extern "C" void __sanitizer_cov_8bit_counters_init(char* start, char* stop) {
             if (g_shm) {
                 size_t count = std::min(static_cast<size_t>(stop - start), MAX_COUNTERS);
                 g_shm->counter_count.store((uint32_t)count);
+                
+                // Log successful initialization
+                log = fopen("/tmp/coverage_agent.log", "a");
+                if (log) {
+                    fprintf(log, "[AGENT] Shared memory initialized! shm_name=%s, counter_count=%zu\n",
+                            shm_name, count);
+                    fclose(log);
+                }
             }
         }
     }
@@ -95,6 +114,13 @@ extern "C" void __sanitizer_cov_pcs_init(const uintptr_t *pcs_beg, const uintptr
 // Constructor: initialize shared memory early
 __attribute__((constructor(101)))
 static void init_coverage_agent() {
+    // Log that agent was loaded
+    FILE* log = fopen("/tmp/coverage_agent.log", "a");
+    if (log) {
+        fprintf(log, "[AGENT] Loaded at %ld, pid=%d\n", time(nullptr), getpid());
+        fclose(log);
+    }
+    
     const char* shm_name = getenv("COVERAGE_SHM_NAME");
     if (shm_name && shm_name[0] != '\0') {
         init_shm(shm_name);

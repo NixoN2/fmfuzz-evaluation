@@ -78,11 +78,12 @@ echo "✅ Using Clang: $(clang++ --version | head -1)"
 # This writes coverage to shared memory which the Python fuzzer reads.
 # NO reliance on ASAN_OPTIONS=coverage=1 (which doesn't work reliably).
 #
-# The allowlist restricts instrumentation to specific functions.
+# NOTE: Allowlist is DISABLED for now to instrument the full binary.
+# This helps verify coverage is working before restricting to specific functions.
 export CC=clang
 export CXX=clang++
-export CXXFLAGS="${CXXFLAGS} -fsanitize-coverage=inline-8bit-counters,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
-export CFLAGS="${CFLAGS} -fsanitize-coverage=inline-8bit-counters,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
+export CXXFLAGS="${CXXFLAGS} -fsanitize-coverage=inline-8bit-counters,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer"
+export CFLAGS="${CFLAGS} -fsanitize-coverage=inline-8bit-counters,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer"
 export LDFLAGS="${LDFLAGS} -fsanitize-coverage=inline-8bit-counters,pc-table -fsanitize=address"
 
 # Configure CVC5 with debug build (required for coverage)

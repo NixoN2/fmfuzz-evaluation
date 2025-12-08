@@ -472,6 +472,16 @@ jobs:
             echo "=== .sancov file details ==="
             find ./test_coverage -name "*.sancov" -type f -exec ls -la {} \;
           fi
+          
+          # Check if trace-pc-guard symbols are in the binary
+          echo ""
+          echo "=== Checking for trace-pc-guard callback symbols ==="
+          nm ./build/bin/cvc5 2>/dev/null | grep -E "__sanitizer_cov_trace_pc|trace_pc_guard" | head -10 || echo "No trace-pc-guard symbols found"
+          
+          # Check for 8bit counter symbols (alternative)
+          echo ""
+          echo "=== Checking for 8bit counter symbols ==="
+          nm ./build/bin/cvc5 2>/dev/null | grep -E "__sanitizer_cov_8bit" | head -10 || echo "No 8bit counter symbols found"
 
       - name: Run fuzzing with sancov coverage tracking
         working-directory: cvc5

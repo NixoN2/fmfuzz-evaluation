@@ -73,14 +73,17 @@ fi
 echo "✅ Using Clang: $(clang++ --version | head -1)"
 
 # Set up environment variables for sancov (Clang-specific)
-# Note: Using inline-8bit-counters,pc-table for coverage that works with modern Clang.
-# trace-pc alone no longer generates .sancov files automatically in Clang 15+.
-# With inline-8bit-counters, coverage data is dumped when ASAN_OPTIONS=coverage=1.
+# 
+# Using trace-pc-guard,pc-table which generates .sancov files automatically
+# when combined with ASan and ASAN_OPTIONS=coverage=1.
+# This was tested and works in the partial-instrumentation/experiment_partial_sancov folder.
+#
+# The allowlist (-fsanitize-coverage-allowlist) restricts instrumentation to specific functions.
 export CC=clang
 export CXX=clang++
-export CXXFLAGS="${CXXFLAGS} -fsanitize-coverage=inline-8bit-counters,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
-export CFLAGS="${CFLAGS} -fsanitize-coverage=inline-8bit-counters,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
-export LDFLAGS="${LDFLAGS} -fsanitize-coverage=inline-8bit-counters,pc-table -fsanitize=address"
+export CXXFLAGS="${CXXFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
+export CFLAGS="${CFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
+export LDFLAGS="${LDFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address"
 
 # Configure CVC5 with debug build (required for coverage)
 echo "🔨 Configuring CVC5..."

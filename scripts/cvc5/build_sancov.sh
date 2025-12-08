@@ -73,11 +73,14 @@ fi
 echo "✅ Using Clang: $(clang++ --version | head -1)"
 
 # Set up environment variables for sancov (Clang-specific)
+# Note: Using trace-pc (not trace-pc-guard) so that .sancov files are generated
+# automatically when ASAN_OPTIONS=coverage=1 is set at runtime.
+# trace-pc-guard requires manual callback handling which is more complex.
 export CC=clang
 export CXX=clang++
-export CXXFLAGS="${CXXFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
-export CFLAGS="${CFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
-export LDFLAGS="${LDFLAGS} -fsanitize-coverage=trace-pc-guard,pc-table -fsanitize=address"
+export CXXFLAGS="${CXXFLAGS} -fsanitize-coverage=trace-pc -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
+export CFLAGS="${CFLAGS} -fsanitize-coverage=trace-pc -fsanitize=address -O1 -g -fno-omit-frame-pointer ${ALLOWLIST_FLAG}"
+export LDFLAGS="${LDFLAGS} -fsanitize-coverage=trace-pc -fsanitize=address"
 
 # Configure CVC5 with debug build (required for coverage)
 echo "🔨 Configuring CVC5..."

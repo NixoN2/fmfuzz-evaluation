@@ -130,6 +130,7 @@ class SimpleCommitFuzzer:
         self.coverage_report = coverage_report
         self.coverage_tracker = None
         self.cov_agent_path = None
+        self.cvc5_wrapper_path = None
         
         if self.enable_sancov:
             try:
@@ -145,8 +146,12 @@ class SimpleCommitFuzzer:
                 # Find coverage agent shared library
                 self.cov_agent_path = self.cvc5_path.parent / 'libcov_agent.so'
                 if not self.cov_agent_path.exists():
-                    # Try parent directory
+                    # Try parent directory (build dir)
                     self.cov_agent_path = self.cvc5_path.parent.parent / 'libcov_agent.so'
+                
+                # Find wrapper script (needed because typefuzz doesn't pass LD_PRELOAD to solvers)
+                script_dir = Path(__file__).parent.parent
+                self.cvc5_wrapper_path = script_dir / 'cvc5_coverage_wrapper.sh'
                 
                 print(f"[Sancov] Coverage tracking enabled (shared memory mode)")
                 print(f"[Sancov] Coverage directory: {self.coverage_dir}")
@@ -155,7 +160,11 @@ class SimpleCommitFuzzer:
                     print(f"[Sancov] Coverage agent: {self.cov_agent_path}")
                 else:
                     print(f"[WARN] Coverage agent not found at {self.cov_agent_path}")
-                    print(f"[WARN] Coverage tracking may not work without the agent!")
+                if self.cvc5_wrapper_path.exists():
+                    print(f"[Sancov] Using wrapper: {self.cvc5_wrapper_path}")
+                else:
+                    print(f"[WARN] Wrapper script not found at {self.cvc5_wrapper_path}")
+                    print(f"[WARN] Coverage tracking may not work without the wrapper!")
             except ImportError as e:
                 print(f"[WARN] Sancov tracking requested but sancov_coverage_tracker not available: {e}", file=sys.stderr)
                 self.enable_sancov = False
@@ -545,8 +554,11 @@ class SimpleCommitFuzzer:
         solvers = [self.z3_new]
         # if self.z3_old_path:
         #     solvers.append(str(self.z3_old_path))
-        # CVC5: No built-in memory limit - rely on our process killing mechanism (max_process_memory_mb)
-        solvers.append(f"{self.cvc5_path} --check-models --check-proofs --strings-exp")
+        # CVC5: Use wrapper script if sancov is enabled (to ensure LD_PRELOAD reaches cvc5)
+        if self.enable_sancov and self.cvc5_wrapper_path and self.cvc5_wrapper_path.exists():
+            solvers.append(f"{self.cvc5_wrapper_path} --check-models --check-proofs --strings-exp")
+        else:
+            solvers.append(f"{self.cvc5_path} --check-models --check-proofs --strings-exp")
         # if self.cvc4_path:
         #     solvers.append(str(self.cvc4_path))
         return ";".join(solvers)
@@ -629,13 +641,10 @@ class SimpleCommitFuzzer:
                 env['COVERAGE_SHM_NAME'] = worker_shm_name
                 env['ASAN_OPTIONS'] = 'abort_on_error=0:detect_leaks=0'
                 
-                # Use LD_PRELOAD to inject coverage agent
+                # Set paths for wrapper script (typefuzz drops LD_PRELOAD, so wrapper re-applies it)
+                env['CVC5_REAL_PATH'] = str(self.cvc5_path.resolve())
                 if self.cov_agent_path and self.cov_agent_path.exists():
-                    existing_preload = env.get('LD_PRELOAD', '')
-                    if existing_preload:
-                        env['LD_PRELOAD'] = f"{self.cov_agent_path}:{existing_preload}"
-                    else:
-                        env['LD_PRELOAD'] = str(self.cov_agent_path)
+                    env['COV_AGENT_PATH'] = str(self.cov_agent_path.resolve())
             
             if per_test_timeout and per_test_timeout > 0:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=per_test_timeout, env=env)

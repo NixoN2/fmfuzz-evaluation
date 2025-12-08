@@ -407,6 +407,20 @@ jobs:
               --build-dir=build
           fi
 
+      - name: Setup coverage wrapper script
+        working-directory: cvc5
+        run: |
+          # Copy wrapper script to build directory and make executable
+          cp ${{ github.workspace }}/scripts/cvc5/cvc5_coverage_wrapper.sh ./build/
+          chmod +x ./build/cvc5_coverage_wrapper.sh
+          
+          # Verify wrapper is set up
+          echo "✅ Wrapper script: ./build/cvc5_coverage_wrapper.sh"
+          ls -la ./build/cvc5_coverage_wrapper.sh
+          
+          # Also copy to scripts location for the fuzzer to find
+          chmod +x ${{ github.workspace }}/scripts/cvc5/cvc5_coverage_wrapper.sh
+      
       - name: Verify solver binaries
         run: |
           z3 --version

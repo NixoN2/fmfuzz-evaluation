@@ -8,6 +8,15 @@ on:
         required: false
         type: number
         default: 60
+      debug_commit_hash:
+        description: 'Debug: Specific commit hash to test (e.g., 686e31842b7b020382e8af38507fd616fed78740). If provided, only this commit will be fuzzed.'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run: Skip S3 uploads (default: false). Set to true to test without uploading results to S3.'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   generate-matrix:
@@ -44,15 +53,27 @@ jobs:
           AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          RESULT=$(python3 scripts/rq2/generate_fuzzing_matrix.py cvc5)
-          
-          COMMIT_MATRIX=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(json.dumps({'include': data['include']}, separators=(',', ':')))")
-          TOTAL_COMMITS=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['total_commits'])")
-          
-          echo "commit_matrix=$COMMIT_MATRIX" >> $GITHUB_OUTPUT
-          echo "total_commits=$TOTAL_COMMITS" >> $GITHUB_OUTPUT
-          
-          echo "✅ Generated matrix: $TOTAL_COMMITS commits"
+          # If debug commit hash is provided, use only that commit
+          if [ -n "${{ inputs.debug_commit_hash }}" ]; then
+            echo "🔍 Debug mode: Using specific commit ${{ inputs.debug_commit_hash }}"
+            DEBUG_COMMIT="${{ inputs.debug_commit_hash }}"
+            # Create a matrix with just this commit
+            COMMIT_MATRIX=$(python3 -c "import json; print(json.dumps({'include': [{'commit': '$DEBUG_COMMIT'}]}, separators=(',', ':')))")
+            TOTAL_COMMITS=1
+            echo "commit_matrix=$COMMIT_MATRIX" >> $GITHUB_OUTPUT
+            echo "total_commits=$TOTAL_COMMITS" >> $GITHUB_OUTPUT
+            echo "✅ Debug mode: Generated matrix with 1 commit ($DEBUG_COMMIT)"
+          else
+            RESULT=$(python3 scripts/rq2/generate_fuzzing_matrix.py cvc5)
+            
+            COMMIT_MATRIX=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(json.dumps({'include': data['include']}, separators=(',', ':')))")
+            TOTAL_COMMITS=$(echo "$RESULT" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['total_commits'])")
+            
+            echo "commit_matrix=$COMMIT_MATRIX" >> $GITHUB_OUTPUT
+            echo "total_commits=$TOTAL_COMMITS" >> $GITHUB_OUTPUT
+            
+            echo "✅ Generated matrix: $TOTAL_COMMITS commits"
+          fi
 
   prepare-commit-fuzzer:
     needs: generate-matrix
@@ -493,6 +514,7 @@ jobs:
           "
       
       - name: Configure AWS credentials
+        if: ${{ !inputs.dry_run }}
         uses: aws-actions/configure-aws-credentials@v5.1.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -517,7 +539,7 @@ jobs:
           fi
       
       - name: Upload merged sancov statistics to S3
-        if: always()
+        if: always() && !inputs.dry_run
         run: |
           COMMIT_HASH="${{ steps.get-commit-merge.outputs.commit_hash }}"
           S3_KEY="evaluation/rq2/cvc5/sancov-statistics/variant1/sancov_statistics-${COMMIT_HASH}.json.gz"
@@ -535,4 +557,18 @@ jobs:
             --body merged_sancov_statistics_${COMMIT_HASH}.json.gz
           
           echo "✅ Uploaded sancov statistics to S3: $S3_KEY"
+      
+      - name: Dry run - Skip S3 upload
+        if: always() && inputs.dry_run
+        run: |
+          COMMIT_HASH="${{ steps.get-commit-merge.outputs.commit_hash }}"
+          S3_KEY="evaluation/rq2/cvc5/sancov-statistics/variant1/sancov_statistics-${COMMIT_HASH}.json.gz"
+          
+          if [ -f "merged_sancov_statistics_${{ matrix.commit }}.json" ]; then
+            echo "🔍 DRY RUN: Would upload to S3: $S3_KEY"
+            echo "🔍 DRY RUN: File exists: merged_sancov_statistics_${{ matrix.commit }}.json"
+            echo "🔍 DRY RUN: Skipping upload (dry_run=true)"
+          else
+            echo "⚠️ Merged sancov statistics file not found"
+          fi
 

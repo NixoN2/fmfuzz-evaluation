@@ -21,6 +21,9 @@ import ctypes
 from ctypes.util import find_library
 from os.path import normpath
 from dataclasses import dataclass
+from math import gcd
+from functools import reduce
+from collections import deque
 
 import clang.cindex
 
@@ -1115,17 +1118,95 @@ def main():
             tests_per_job = args.tests_per_job
             actual_jobs = (total_tests + tests_per_job - 1) // tests_per_job if total_tests > 0 else 0
         
-        # Group tests into jobs
+        # Group tests into jobs using optimized batch-proportional round-robin algorithm
+        # This ensures tests for each function are evenly distributed across jobs with ratio-based interleaving
         jobs = []
-        for i in range(0, total_tests, tests_per_job):
-            job_tests = unique_tests[i:i + tests_per_job]
-            job_id = i // tests_per_job
+        function_matches = result.get('function_matches', {})
+        
+        # Check if we have function matches (fallback to sequential if not)
+        if function_matches and any(match.get('tests') for match in function_matches.values()):
+            # Multi-queue system: group tests by function
+            function_queues = {}
+            for func, match_data in function_matches.items():
+                func_tests = match_data.get('tests', [])
+                if func_tests:
+                    function_queues[func] = list(func_tests)
             
-            # Always use 'tests' as an array, even for single test
-            jobs.append({
-                'job_id': job_id,
-                'tests': job_tests
-            })
+            if function_queues:
+                # Optimized batch-proportional round-robin algorithm
+                # Uses deques for O(1) consumption, eliminating re-scanning
+                func_list = list(function_queues.keys())
+                n_funcs = len(func_list)
+                total_tests_per_func = [len(function_queues[f]) for f in func_list]
+                
+                # Step 1: Compute GCD-normalized ratio
+                if total_tests_per_func:
+                    g = reduce(gcd, total_tests_per_func)
+                    ratio = [c // g for c in total_tests_per_func]  # e.g. [3000,1000,100] → [30,10,1]
+                else:
+                    ratio = [1] * n_funcs
+                
+                # Step 2: Precompute exact quotas per job per function (with fair remainder)
+                quotas = []
+                for count in total_tests_per_func:
+                    base = count // actual_jobs
+                    extras = count % actual_jobs
+                    quotas.append([base + (1 if i < extras else 0) for i in range(actual_jobs)])
+                
+                # Step 3: Prepare deques for O(1) consumption (preserves order, no re-scanning)
+                queues = [deque(function_queues[func]) for func in func_list]
+                
+                # Step 4: Build jobs using batch-proportional round-robin
+                for job_id in range(actual_jobs):
+                    remaining = [quotas[f_idx][job_id] for f_idx in range(n_funcs)]
+                    job_tests = []
+                    
+                    while any(remaining):
+                        for f_idx in range(n_funcs):
+                            if remaining[f_idx] == 0:
+                                continue
+                            
+                            take = min(ratio[f_idx], remaining[f_idx])
+                            added = 0
+                            
+                            # Pop up to 'take' tests from front of this function's queue
+                            while added < take and queues[f_idx]:
+                                test = queues[f_idx].popleft()
+                                job_tests.append(test)
+                                added += 1
+                            
+                            # If we couldn't get enough (shouldn't happen), stop early
+                            if added == 0:
+                                remaining[f_idx] = 0  # no more tests available
+                                break
+                            
+                            remaining[f_idx] -= added
+                            if added < take:
+                                # Partial block — this function is exhausted
+                                remaining[f_idx] = 0
+                    
+                    jobs.append({
+                        'job_id': job_id,
+                        'tests': job_tests
+                    })
+            else:
+                # No function queues, fallback to sequential split
+                for i in range(0, total_tests, tests_per_job):
+                    job_tests = unique_tests[i:i + tests_per_job]
+                    job_id = i // tests_per_job
+                    jobs.append({
+                        'job_id': job_id,
+                        'tests': job_tests
+                    })
+        else:
+            # Fallback: no function matches, use sequential split
+            for i in range(0, total_tests, tests_per_job):
+                job_tests = unique_tests[i:i + tests_per_job]
+                job_id = i // tests_per_job
+                jobs.append({
+                    'job_id': job_id,
+                    'tests': job_tests
+                })
         
         matrix_data = {
             'matrix': {'include': jobs},

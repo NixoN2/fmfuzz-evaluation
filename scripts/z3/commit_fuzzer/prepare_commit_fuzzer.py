@@ -20,6 +20,9 @@ import ctypes
 from ctypes.util import find_library
 from os.path import normpath
 from dataclasses import dataclass
+from math import gcd
+from functools import reduce
+from collections import deque
 
 import clang.cindex
 
@@ -1115,45 +1118,57 @@ def main():
                     function_queues[func] = list(func_tests)
             
             if function_queues:
-                # Two-phase approach: Phase 1 (allocation) + Phase 2 (interleaving)
+                # Optimized batch-proportional round-robin algorithm
+                # Uses deques for O(1) consumption, eliminating re-scanning
+                func_list = list(function_queues.keys())
+                n_funcs = len(func_list)
+                total_tests = [len(function_queues[f]) for f in func_list]
+                
+                # Step 1: Compute GCD-normalized ratio
+                if total_tests:
+                    g = reduce(gcd, total_tests)
+                    ratio = [c // g for c in total_tests]  # e.g. [3000,1000,100] → [30,10,1]
+                else:
+                    ratio = [1] * n_funcs
+                
+                # Step 2: Precompute exact quotas per job per function (with fair remainder)
+                quotas = []
+                for count in total_tests:
+                    base = count // actual_jobs
+                    extras = count % actual_jobs
+                    quotas.append([base + (1 if i < extras else 0) for i in range(actual_jobs)])
+                
+                # Step 3: Prepare deques for O(1) consumption (preserves order, no re-scanning)
+                queues = [deque(function_queues[func]) for func in func_list]
+                
+                # Step 4: Build jobs using batch-proportional round-robin
                 for job_id in range(actual_jobs):
-                    # Phase 1: Compute exact count per function for this job
-                    this_job_counts = {}
-                    for func, tests in function_queues.items():
-                        n = len(tests)
-                        base = n // actual_jobs
-                        if job_id < n % actual_jobs:
-                            base += 1
-                        if base > 0:
-                            this_job_counts[func] = base
-                    
-                    # Phase 2: Supermarket interleaving (Bresenham-style)
-                    pointers = {f: 0 for f in this_job_counts}
-                    accum = {f: 0.0 for f in this_job_counts}
-                    weights = {f: len(function_queues[f]) for f in this_job_counts}
+                    remaining = [quotas[f_idx][job_id] for f_idx in range(n_funcs)]
                     job_tests = []
                     
-                    total_in_job = sum(this_job_counts.values())
-                    total_weight = sum(weights.values())
-                    
-                    while len(job_tests) < total_in_job:
-                        best_func = None
-                        best_score = -1
-                        
-                        for func in this_job_counts:
-                            if pointers[func] < this_job_counts[func]:
-                                accum[func] += weights[func]
-                                if accum[func] > best_score:
-                                    best_score = accum[func]
-                                    best_func = func
-                        
-                        if best_func is None:
-                            break
-                        
-                        test = function_queues[best_func][pointers[best_func]]
-                        job_tests.append(test)
-                        pointers[best_func] += 1
-                        accum[best_func] -= total_weight
+                    while any(remaining):
+                        for f_idx in range(n_funcs):
+                            if remaining[f_idx] == 0:
+                                continue
+                            
+                            take = min(ratio[f_idx], remaining[f_idx])
+                            added = 0
+                            
+                            # Pop up to 'take' tests from front of this function's queue
+                            while added < take and queues[f_idx]:
+                                test = queues[f_idx].popleft()
+                                job_tests.append(test)
+                                added += 1
+                            
+                            # If we couldn't get enough (shouldn't happen), stop early
+                            if added == 0:
+                                remaining[f_idx] = 0  # no more tests available
+                                break
+                            
+                            remaining[f_idx] -= added
+                            if added < take:
+                                # Partial block — this function is exhausted
+                                remaining[f_idx] = 0
                     
                     jobs.append({
                         'job_id': job_id,
